@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.6-reset",
+        "version": "v4.6.2",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.6-reset"}
+    return {"version": "v4.6.2"}
 
 
 @app.get("/health")

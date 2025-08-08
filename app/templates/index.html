@@ -20,16 +20,16 @@
       <p>Drop your Word (.docx) here or click to browse</p>
     </div>
     <div class="opts">
-      <label><input id="use-web" type="checkbox" checked/> Use web sources</label>
+      <label><input id="use-web" name="use_web" type="checkbox" checked/> Use web sources</label>
       <label>Domain
-        <select id="domain">
+        <select id="domain" name="domain">
           <option value="">General</option>
           <option value="tech">Tech / Web</option>
           <option value="bio">Biomedical</option>
           <option value="gov">Gov / Reg</option>
         </select>
       </label>
-      <label><input id="strict" type="checkbox" checked/> Strict initials</label>
+      <label><input id="strict" name="strict" type="checkbox" checked/> Strict initials</label>
       <button id="go" type="submit">Extract</button>
     </div>
   </form>

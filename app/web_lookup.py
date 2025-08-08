@@ -103,7 +103,7 @@ def wikipedia_opensearch(acr: str, keyword: str | None = None, lang: str = 'en')
                 norm = normalize_definition2(acr, txt, title_hint=t)
                 if norm:
                     out.append((norm, "en.wikipedia.org", 0.58))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 def wikipedia_rest_summary(acr: str, keyword: str | None = None, lang: str = 'en'):
     page = acr if not keyword else f"{acr} ({keyword})"
@@ -116,7 +116,7 @@ def wikipedia_rest_summary(acr: str, keyword: str | None = None, lang: str = 'en
             norm = normalize_definition2(acr, txt, title_hint=data.get("title"))
             if norm:
                 out.append((norm, "en.wikipedia.org", 0.64))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 def wiktionary_search(acr: str, keyword: str | None = None):
     q = acr if not keyword else f"{acr} {keyword}"
@@ -129,7 +129,7 @@ def wiktionary_search(acr: str, keyword: str | None = None):
         for t in titles:
             if t:
                 out.append((t, "en.wiktionary.org", 0.45))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 def wikidata_search(acr: str, keyword: str | None = None):
     q = acr if not keyword else f"{acr} {keyword}"
@@ -142,7 +142,7 @@ def wikidata_search(acr: str, keyword: str | None = None):
             desc = (item.get('description') or item.get('label') or '').strip()
             if desc:
                 out.append((desc, "www.wikidata.org", 0.5))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None, lang: str = 'en', domain: str | None = None, strict_initials: bool = False):
@@ -207,7 +207,7 @@ def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | N
         out = [x for x in out if _initials(x[0]) == acr.upper()]
     out = sorted(out, key=lambda x: x[2], reverse=True)[:limit]
     _cache_set(key, out)
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 def _is_disambiguation_text(text: str) -> bool:
@@ -247,7 +247,7 @@ def wikipedia_title_search(acr: str, keyword: str | None = None, lang: str = 'en
                 norm = normalize_definition2(acr, txt, title_hint=t)
                 if norm:
                     out.append((norm, "en.wikipedia.org", 0.68))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 # --- Definition normalization: extract clean expansion only ---
@@ -354,7 +354,7 @@ def dbpedia_search(acr: str, keyword: str | None = None, lang: str = "en"):
                 norm = normalize_definition2(acr, com, title_hint=lab)
                 if norm and _accept_expansion(acr, norm):
                     out.append((norm, "dbpedia.org", 0.5))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 def ietf_glossary(acr: str, keyword: str | None = None):
     # RFC Editor glossary JSON (static URL often used in docs; may change). 
@@ -377,7 +377,7 @@ def ietf_glossary(acr: str, keyword: str | None = None):
     val = common.get(acr.upper())
     if val:
         out.append((val, "ietf-glossary", 0.62))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 def normalize_definition2(acr: str, source_text: str, title_hint: str | None = None):
@@ -466,7 +466,7 @@ def acromine_lookup(acr: str):
                     freq = float(item.get("freq", 0) or 0)
                     sc = 0.75 if freq > 0 else 0.65
                     out.append((lf, "acromine", sc))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
         return []
 
@@ -495,7 +495,7 @@ def wiktionary_summary(acr: str, lang: str = "en"):
                 norm = normalize_definition2(acr, txt, title_hint=t)
                 if norm and _accept_expansion(acr, norm):
                     out.append((norm, f"{lang}.wiktionary.org", 0.56))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 
@@ -516,9 +516,9 @@ def freedict_lookup(acr: str, lang: str = "en"):
                         norm = normalize_definition2(acr, text, title_hint=title)
                         if norm and _accept_expansion(acr, norm):
                             out.append((norm, "dictionaryapi.dev", 0.5))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 
@@ -534,7 +534,7 @@ def wordnik_lookup(acr: str):
             norm = normalize_definition2(acr, txt, title_hint=d.get("word"))
             if norm and _accept_expansion(acr, norm):
                 out.append((norm, "wordnik", 0.48))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 
@@ -553,7 +553,7 @@ def merriam_webster_lookup(acr: str):
                 norm = normalize_definition2(acr, s, title_hint=title)
                 if norm and _accept_expansion(acr, norm):
                     out.append((norm, "m-w", 0.55))
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 
 
@@ -580,7 +580,7 @@ CACHE = {} as _hx
             norm = normalize_definition2(acr, txt, title_hint=js.get("word"))
             if norm and _accept_expansion(acr, norm):
                 out.append((norm, "wordsapi", 0.5))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
         return []
 
@@ -601,7 +601,7 @@ def definitions_net_lookup(acr: str):
             norm = normalize_definition2(acr, txt, title_hint=d.get("term") or acr)
             if norm and _accept_expansion(acr, norm):
                 out.append((norm, "definitions.net", 0.5))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
         return []
 
@@ -622,9 +622,9 @@ def wikipedia_search_titles(acr: str, keyword: str|None=None, *, lang: str='en',
                     norm = normalize_definition2(acr, summ.get("extract") or "", title_hint=summ.get("title"))
                     if norm and _accept_expansion(acr, norm):
                         out.append((norm, f"{lang}.wikipedia.org", 0.64))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 def wikipedia_rest_summary_title(title: str, *, lang: str='en'):
     url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title.replace(' ','_')}"
@@ -672,7 +672,7 @@ def mdn_glossary_lookup(acr: str):
                 exp = title if _accept_expansion(acr, title, strict=False) else ""
                 if exp:
                     out.append((exp, "mdn", 0.68))
-        return out
+        log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
     except Exception:
         return []
 
@@ -701,7 +701,7 @@ def pack_lookup(acr: str):
                 out.append((val, f"pack-{src}", 0.78))
         except Exception:
             pass
-    return out
+    log.info('acromine candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'acromine candidates'); log.info('mdn candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'mdn candidates'); log.info('w3c candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'w3c candidates'); log.info('pack candidates(%s): ' + str(len(out)) if 'acr' in locals() else 'pack candidates'); return out
 
 log = logging.getLogger('web-lookup')
 
