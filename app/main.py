@@ -8,6 +8,7 @@ except Exception as e:
     print(f"[BOOT] Web lookup import failed: {e}")
     from app.web_lookup import get_web_candidates
     WEB_LOOKUP_VERSION = "unknown"
+
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -109,12 +110,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.6.7",
+        "version": "v4.6.8",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.6.7"}
+    return {"version": "v4.6.8"}
 
 
 @app.get("/health")
@@ -294,4 +295,4 @@ def detect_language(text: str) -> str:
 async def on_start():
     logging.getLogger('web-lookup').setLevel(logging.INFO)
     logging.getLogger().setLevel(logging.INFO)
-    print("[BOOT] Acronym Buster starting – v4.6.7, " + WEB_LOOKUP_VERSION)
+    print("[BOOT] Acronym Buster starting – v4.6.8, " + WEB_LOOKUP_VERSION)
