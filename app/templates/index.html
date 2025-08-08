@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acronym Extractor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="hero gradient">
+    <div class="wrap">
+      <h1>📄 Acronym & Definition Extractor</h1>
+      <p>Upload a Word <strong>.docx</strong>. We prefer in-document definitions; if missing, we gather <em>free</em> web candidates (Wikipedia/DDG) and let you pick.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <h2>Upload your document</h2>
+      <input id="file-input" type="file" name="file" accept=".docx,.doc" style="display:none" />
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="file" accept=".docx" />
+        <div class="dz-instructions">
+          <p><strong>Drag & drop</strong> a .docx here, or click to choose a file.</p>
+          <small>We don't store your content. Parsing happens in-memory.</small>
+        </div>
+      </div>
+      <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
+        <div class="row">
+          <label>Domain: 
+            <select id="domain-select">
+              <option value="">General</option>
+              <option value="tech">Tech</option>
+              <option value="gov">Government/Regulation</option>
+              <option value="bio">Biology/Medical</option>
+              <option value="finance">Finance</option>
+            </select>
+          </label>
+          <label class="switch"><input type="checkbox" id="strict-initials" /> <span>Strict initials</span></label>
+        </div>
+        
+        <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTML, PDF, USA…)</span></label>
+      </div>
+      <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
+        <div class="row">
+          <label>Domain: 
+            <select id="domain-select">
+              <option value="">General</option>
+              <option value="tech">Tech</option>
+              <option value="gov">Government/Regulation</option>
+              <option value="bio">Biology/Medical</option>
+              <option value="finance">Finance</option>
+            </select>
+          </label>
+          <label class="switch"><input type="checkbox" id="strict-initials" /> <span>Strict initials</span></label>
+        </div>
+        
+        <button id="extract-btn" disabled>Extract Acronyms</button>
+        <button id="download-csv" disabled class="secondary">Download CSV</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="spinner" class="spinner hidden"></div>
+    </section>
+
+    <div class="progress-container hidden"><div class="progress-bar"></div><div class="progress-text">Preparing…</div><button type="button" id="cancel-btn" class="btn btn-link">Cancel</button></div>
+      
+      <div class="table-controls">
+        <label><input type="checkbox" id="col-toggle-source" checked /> Source</label>
+        <label><input type="checkbox" id="col-toggle-confidence" checked /> Confidence</label>
+        <label><input type="checkbox" id="col-toggle-gauge" checked /> Gauge</label>
+        <label><input type="checkbox" id="compact-rows" /> Compact rows</label>
+      </div>
+    
+      <section id="results" class="card hidden">
+      <div id="summary" class="summary-box"></div>
+      <div class="table-head">
+        <h2>Results (click dropdowns to pick the right definition)</h2>
+        <input type="search" id="filter" placeholder="Filter acronyms or definitions…" />
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th style="min-width:120px">Acronym</th>
+              <th style="min-width:260px">Definition</th>
+              <th>Confidence</th><th>Gauge</th>
+              <th>Source</th>
+              <th>Note</th>
+              <th>First seen</th>
+              <th>Pick</th><th>Refine</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer wrap" id="footer-ver">
+    <small>© Acronym Extractor • Document-first definitions, web as fallback (free sources).</small>
+  </footer>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file');
+    const extractBtn = document.getElementById('extract-btn');
+    const downloadBtn = document.getElementById('download-csv');
+    const status = document.getElementById('status');
+    const spinner = document.getElementById('spinner');
+    const resultsCard = document.getElementById('results');
+    const tableBody = document.getElementById('tbody');
+    const filterInput = document.getElementById('filter');
+    const includeCommon = document.getElementById('include-common');
+
+    let currentFile = null;
+    let lastData = null;
+
+    function setLoading(isLoading, text) {
+      spinner.classList.toggle('hidden', !isLoading);
+      if (text !== undefined) status.textContent = text || '';
+    }
+
+    function enableButtons(hasFile, hasData) {
+      extractBtn.disabled = !hasFile;
+      downloadBtn.disabled = !hasData;
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag');
+      if (e.dataTransfer.files.length) {
+        currentFile = e.dataTransfer.files[0];
+        fileInput.files = e.dataTransfer.files;
+        dropzone.querySelector('.dz-instructions p').innerHTML = `<strong>Selected:</strong> ${currentFile.name}`;
+        enableButtons(true, !!lastData);
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      currentFile = e.target.files[0];
+      if (currentFile) {
+        dropzone.querySelector('.dz-instructions p').innerHTML = `<strong>Selected:</strong> ${currentFile.name}`;
+        enableButtons(true, !!lastData);
+      }
+    });
+
+    function renderTable(data) {
+      window.__acronymData = data; // keep globally for CSV build
+      const rows = data.acronyms.map((a, idx) => {
+        const candOpts = (a.candidates || []).map((c, ci) => {
+          const label = `${c.definition} — [${c.source}] ${(c.confidence||0).toFixed(2)}`;
+          const selected = (a.chosen_index === ci) ? 'selected' : '';
+          return `<option value="${ci}" ${selected}>${label.replace(/</g,'&lt;')}</option>`;
+        }).join('');
+        const chosen = (a.candidates && a.candidates[a.chosen_index]) ? a.candidates[a.chosen_index] : null;
+        const defn = chosen ? chosen.definition : (a.definition || '');
+        const conf = chosen ? chosen.confidence : (a.confidence||0);
+        const src  = chosen ? chosen.source : (a.source||'none');
+        const note = (src.startsWith('web:') ? 'possible match (web)' : (a.note || ''));
+
+        return `
+          <tr data-index="${idx}">
+            <td><code>${a.term}</code></td>
+            <td class="defn">${defn ? defn : '<em>—</em>'}</td>
+            <td class="conf">${Number(conf||0).toFixed(2)}</td>
+            <td class="gauge"><div class="bar"><div class="fill" style="width:${Math.max(0,Math.min(1,conf||0))*100}%"></div></div></td>
+            <td class="src"><span class="pill ${src.startsWith('web:') ? 'pill-web' : (src==='document' ? 'pill-doc' : (src==='canonical' ? 'pill-doc' : 'pill-none'))}">${src}</span></td>
+            <td class="note">${note || ''}</td>
+            <td class="excerpt">${a.first_seen_excerpt ? a.first_seen_excerpt : ''}</td>
+            <td class="picker">
+              ${(a.candidates && a.candidates.length > 0)
+                ? `<select class="cand-select">${candOpts}</select>`
+                : '<em>no candidates</em>'}
+            </td>
+            <td>
+              <button class="refine-btn">Refine</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      tableBody.innerHTML = rows;
+      resultsCard.classList.remove('hidden');
+
+      // Wire up selects
+      tableBody.querySelectorAll('.cand-select').forEach((sel, rowIdx) => {
+        sel.addEventListener('change', async (e) => {
+          const tr = e.target.closest('tr');
+          const idx = Number(tr.getAttribute('data-index'));
+          const ci = Number(e.target.value);
+          __acronymData.acronyms[idx].chosen_index = ci;
+          const chosen = __acronymData.acronyms[idx].candidates[ci];
+          // update visible cells
+          tr.querySelector('.defn').textContent = chosen.definition;
+          tr.querySelector('.conf').textContent = Number(chosen.confidence||0).toFixed(2);
+          const srcEl = tr.querySelector('.src');
+          srcEl.innerHTML = `<span class="pill ${chosen.source.startsWith('web:') ? 'pill-web' : (chosen.source==='document' ? 'pill-doc' : (chosen.source==='canonical' ? 'pill-doc' : 'pill-none'))}">${chosen.source}</span>`;
+          tr.querySelector('.note').textContent = chosen.source.startsWith('web:') ? 'possible match (web)' : '';
+          // persist choice so next uploads auto-pick it
+          try {
+            await fetch('/learn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ term: __acronymData.acronyms[idx].term, definition: chosen.definition, source: 'learned', confidence: chosen.confidence || 0.9 }) });
+            tr.classList.add('saved');
+            setTimeout(() => tr.classList.remove('saved'), 800);
+          } catch (_) {}
+
+        });
+      });
+    }
+
+    function filterRows() {
+      const q = filterInput.value.toLowerCase();
+      Array.from(tableBody.querySelectorAll('tr')).forEach(tr => {
+        const text = tr.textContent.toLowerCase();
+        tr.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+    filterInput.addEventListener('input', filterRows);
+
+    async function extract() {
+      if (!currentFile) return;
+      const formData = new FormData();
+      formData.append('file', currentFile);
+
+      // Send a hint to backend via env only for now; future: add query param
+      setLoading(true, 'Extracting…');
+      enableButtons(false, false);
+
+      try {
+        const res = await fetch('/extract', { method: 'POST', body: formData });
+        const data = await res.json();
+        lastData = data;
+        renderTable(data);
+        status.textContent = `Found ${data.acronyms.length} acronym${data.acronyms.length===1?'':'s'}.`;
+        enableButtons(!!currentFile, true);
+      } catch (err) {
+        status.textContent = 'Error: ' + (err.message || err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function downloadClientCSV() {
+      if (!window.__acronymData) return;
+      const rows = [['Acronym','Definition','Confidence','Source','Note','FirstSeenExcerpt']];
+      for (const a of __acronymData.acronyms) {
+        let defn = a.definition || '';
+        let conf = a.confidence || 0;
+        let src = a.source || 'none';
+        if (a.candidates && a.candidates[a.chosen_index]) {
+          const ch = a.candidates[a.chosen_index];
+          defn = ch.definition;
+          conf = ch.confidence;
+          src  = ch.source;
+        }
+        rows.push([a.term, defn, String(conf), src, (src.startsWith('web:')?'possible match (web)':(a.note||'')), a.first_seen_excerpt||'']);
+      }
+      const csv = rows.map(r => r.map(v => {
+        const s = String(v).replaceAll('"','""');
+        return `"${s}"`;
+      }).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'acronyms.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    extractBtn.addEventListener('click', extract);
+    downloadBtn.addEventListener('click', downloadClientCSV);
+  
+      // refine: ask for a keyword and hit /enrich to add better candidates
+      tableBody.addEventListener('click', async (e) => {
+        if (!e.target.classList.contains('refine-btn')) return;
+        const tr = e.target.closest('tr');
+        const idx = Number(tr.getAttribute('data-index'));
+        const a = __acronymData.acronyms[idx];
+        const kw = prompt(`Add a keyword to refine '${a.term}' (e.g., 'computing', 'law', 'web'):`);
+        if (kw === null) return;
+        try {
+          const res = await fetch('/enrich', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ term: a.term, keyword: kw, context: (a.first_seen_excerpt || '') })});
+          const data = await res.json();
+          if (data && Array.isArray(data.candidates)) {
+            const newCands = data.candidates.map(c => ({definition:c.definition, confidence:c.confidence, source:c.source}));
+            // Merge without dupes
+            const existing = a.candidates || [];
+            const seen = new Set(existing.map(c => (c.definition||'').toLowerCase().trim()+ '|' + (c.source||'')));
+            for (const c of newCands) {
+              const key = (c.definition||'').toLowerCase().trim()+ '|' + (c.source||'');
+              if (!seen.has(key)) existing.push(c);
+            }
+            a.candidates = existing;
+            // Rebuild select
+            const sel = tr.querySelector('.cand-select');
+            if (sel) {
+              sel.innerHTML = existing.map((c,ci) => `<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('');
+            } else {
+              tr.querySelector('.picker').innerHTML = `<select class="cand-select">${existing.map((c,ci)=>`<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('')}</select>`;
+            }
+          }
+        } catch (err) {
+          console.log('enrich error', err);
+        }
+      });
+    
+  
+    // Fetch version/meta and show in footer
+    fetch('/meta').then(r=>r.json()).then(m=>{
+      const f = document.getElementById('footer-ver');
+      if (f && m && m.version) {
+        f.innerHTML = `<small>© Acronym Extractor • ${m.version}</small>`;
+      }
+    }).catch(()=>{});
+
+    function computeSummary(data) {
+      const total = data.acronyms.length;
+      let doc=0, learned=0, web=0, none=0, multi=0;
+      for (const a of data.acronyms) {
+        const hasMulti = (a.candidates && a.candidates.length>1);
+        if (hasMulti) multi++;
+        let src = a.source;
+        if (a.candidates && a.candidates[a.chosen_index]) src = a.candidates[a.chosen_index].source;
+        if (!src) { none++; continue; }
+        if (src === 'document') doc++;
+        else if (src === 'learned' || src === 'user') learned++;
+        else if (src.startsWith('web:')) web++;
+        else none++;
+      }
+      const el = document.getElementById('summary');
+      el.innerHTML = `
+        <div class="summary-grid">
+          <div><strong>${total}</strong><span>Total acronyms</span></div>
+          <div><strong>${doc}</strong><span>From document</span></div>
+          <div><strong>${learned}</strong><span>From learned memory</span></div>
+          <div><strong>${web}</strong><span>From web</span></div>
+          <div><strong>${multi}</strong><span>With multiple choices</span></div>
+        </div>
+      `;
+    }
+
+    // Optional client-side web fetch (Wikipedia + Wikidata), merges into candidates
+    async function clientFetchWeb(term, ctx, keyword) {
+      const out = [];
+      try {
+        // Wikipedia REST summary
+        const wp1 = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(keyword? term+ ' ('+keyword+')' : term)}`);
+        if (wp1.ok) {
+          const j = await wp1.json();
+          const txt = (j.extract || j.description || '').split('.')[0];
+          if (txt) out.push({definition: txt, source: 'web:en.wikipedia.org', confidence: 0.58});
+        }
+      } catch {}
+      try {
+        // Wikipedia open search
+        const os = new URL('https://en.wikipedia.org/w/api.php');
+        os.search = new URLSearchParams({action:'opensearch',limit:'6',namespace:'0',format:'json',search: keyword? term+' '+keyword : term}).toString();
+        const wp2 = await fetch(os, {headers:{'Accept':'application/json'}});
+        if (wp2.ok) {
+          const arr = await wp2.json();
+          if (Array.isArray(arr) && arr.length>=3) {
+            const titles = arr[1], descs = arr[2];
+            for (let i=0;i<Math.min(titles.length, descs.length);i++) {
+              const txt = (descs[i] || titles[i] || '').trim();
+              if (txt) out.push({definition: txt, source: 'web:en.wikipedia.org', confidence: 0.55});
+            }
+          }
+        }
+      } catch {}
+      try {
+        // Wikidata search
+        const wd = new URL('https://www.wikidata.org/w/api.php');
+        wd.search = new URLSearchParams({action:'wbsearchentities',format:'json',language:'en',limit:'6',search: keyword? term+' '+keyword: term}).toString();
+        const wdres = await fetch(wd, {headers:{'Accept':'application/json'}});
+        if (wdres.ok) {
+          const j = await wdres.json();
+          if (j && Array.isArray(j.search)) {
+            for (const it of j.search) {
+              const desc = (it.description || it.label || '').trim();
+              if (desc) out.push({definition: desc, source: 'web:www.wikidata.org', confidence: 0.5});
+            }
+          }
+        }
+      } catch {}
+      // Simple re-scoring with initials & context keywords
+      function score(defn) {
+        const a = term.toUpperCase();
+        const words = (defn.definition||'').split(/[^A-Za-z0-9]+/).filter(Boolean);
+        const initials = words.map(w=>w[0].toUpperCase()).join('');
+        let s = 0.5;
+        if (initials === a) s += 0.3;
+        else if (initials.includes(a) || a.includes(initials)) s += 0.15;
+        const ctx = (ctx||'').toLowerCase();
+        for (const k of ['computer','data','network','law','regulation','europe','united','states','protocol','web','processor','graphics','artificial','intelligence']) {
+          if (ctx.includes(k) && (defn.definition||'').toLowerCase().includes(k)) s += 0.03;
+        }
+        return Math.max(0.1, Math.min(0.9, s));
+      }
+      out.forEach(o => o.confidence = score(o));
+      return out;
+    }
+    
+
+  function onRefineClick(e){
+    const b = e.target.closest('.refine-btn'); if (!b) return;
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const idx = parseInt(tr.dataset.index,10);
+    const term = tr.querySelector('.term')?.textContent?.trim();
+    const hint = prompt(`Refine web search for ${term} (e.g., "computing", "law", "EU"):`);
+    if (!hint) return;
+    fetch(`/enrich?term=${encodeURIComponent(term)}&keyword=${encodeURIComponent(hint)}`)
+      .then(r=>r.json()).then(js=>{
+        const cands = (js && js.candidates) || [];
+        if (cands.length){
+          const sel = tr.querySelector('.cand-select');
+          const opts = cands.map((c,ci)=>`<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('');
+          if (sel) sel.innerHTML = opts; else tr.querySelector('.picker').innerHTML = `<select class="cand-select">${opts}</select>`;
+          tr.querySelector('.defn').textContent = cands[0].definition || '';
+          tr.querySelector('.conf').textContent = Number(cands[0].confidence||0).toFixed(2);
+          const fill = tr.querySelector('.gauge .fill'); if (fill) fill.style.width = `${Math.round((cands[0].confidence||0)*100)}%`;
+          tr.querySelector('.src').innerHTML = `<span class="pill pill-web">${cands[0].source}</span>`;
+        } else {
+          alert('No candidates found for that hint.');
+        }
+      }).catch(()=>alert('Refine failed.'));
+  }
+  document.addEventListener('click', onRefineClick);
+
+  // Column toggles & compact mode
+  function applyTableToggles(){
+    const t = document.querySelector('#results table'); if (!t) return;
+    const showSrc = document.getElementById('col-toggle-source').checked;
+    const showConf = document.getElementById('col-toggle-confidence').checked;
+    const showGauge = document.getElementById('col-toggle-gauge').checked;
+    t.querySelectorAll('th.src, td.src').forEach(el=>el.style.display = showSrc? 'table-cell':'none');
+    t.querySelectorAll('th.conf, td.conf').forEach(el=>el.style.display = showConf? 'table-cell':'none');
+    t.querySelectorAll('th.gauge, td.gauge').forEach(el=>el.style.display = showGauge? 'table-cell':'none');
+    document.querySelector('#results').classList.toggle('compact', document.getElementById('compact-rows').checked);
+  }
+  ['col-toggle-source','col-toggle-confidence','col-toggle-gauge','compact-rows'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyTableToggles);
+  });
+  // Call after rendering
+  const _oldRenderResults = renderResults;
+  renderResults = function(data){ _oldRenderResults(data); applyTableToggles(); };
+</script>
+</body>
+</html>
