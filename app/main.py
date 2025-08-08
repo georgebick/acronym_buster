@@ -15,11 +15,19 @@ from app.extraction import sentence_split, find_acronym_candidates, find_definit
 # --- robust import for web lookups ---
 try:
     # absolute import first (more robust on Render)
+    try:
     from app.web_lookup import get_web_candidates, WEB_LOOKUP_VERSION
+except Exception:
+    from app.web_lookup import get_web_candidates
+    WEB_LOOKUP_VERSION = "web-lookup unknown"
 except Exception as _abs_err:
     try:
         # fallback to relative
-        from app.web_lookup import get_web_candidates, WEB_LOOKUP_VERSION
+        try:
+    from app.web_lookup import get_web_candidates, WEB_LOOKUP_VERSION
+except Exception:
+    from app.web_lookup import get_web_candidates
+    WEB_LOOKUP_VERSION = "web-lookup unknown"
     except Exception as _rel_err:
         def get_web_candidates(acr: str, context_text: str, limit: int = 5):
             # Last-resort: no web results
@@ -105,12 +113,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.6.4",
+        "version": "v4.6.5",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.6.4"}
+    return {"version": "v4.6.5"}
 
 
 @app.get("/health")
@@ -290,4 +298,4 @@ def detect_language(text: str) -> str:
 async def on_start():
     logging.getLogger('web-lookup').setLevel(logging.INFO)
     logging.getLogger().setLevel(logging.INFO)
-    print("[BOOT] Acronym Buster starting – v4.6.4, " + WEB_LOOKUP_VERSION)
+    print("[BOOT] Acronym Buster starting – v4.6.5, " + WEB_LOOKUP_VERSION)
