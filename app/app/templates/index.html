@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acronym Extractor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <h1>📄 Acronym & Definition Extractor</h1>
+      <p>Upload a Word <strong>.docx</strong>. We prefer in-document definitions; if missing, we gather <em>free</em> web candidates (Wikipedia/DDG) and let you pick.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <h2>Upload your document</h2>
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="file" accept=".docx" />
+        <div class="dz-instructions">
+          <p><strong>Drag & drop</strong> a .docx here, or click to choose a file.</p>
+          <small>We don't store your content. Parsing happens in-memory.</small>
+        </div>
+      </div>
+      <div class="actions">
+        <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTML, PDF, USA…)</span></label>
+      </div>
+      <div class="actions">
+        <button id="extract-btn" disabled>Extract Acronyms</button>
+        <button id="download-csv" disabled class="secondary">Download CSV</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="spinner" class="spinner hidden"></div>
+    </section>
+
+    <section id="results" class="card hidden">
+      <div class="table-head">
+        <h2>Results (click dropdowns to pick the right definition)</h2>
+        <input type="search" id="filter" placeholder="Filter acronyms or definitions…" />
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th style="min-width:120px">Acronym</th>
+              <th style="min-width:260px">Definition</th>
+              <th>Confidence</th>
+              <th>Source</th>
+              <th>Note</th>
+              <th>First seen</th>
+              <th>Pick</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer wrap">
+    <small>© Acronym Extractor • Document-first definitions, web as fallback (free sources).</small>
+  </footer>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file');
+    const extractBtn = document.getElementById('extract-btn');
+    const downloadBtn = document.getElementById('download-csv');
+    const status = document.getElementById('status');
+    const spinner = document.getElementById('spinner');
+    const resultsCard = document.getElementById('results');
+    const tableBody = document.getElementById('tbody');
+    const filterInput = document.getElementById('filter');
+    const includeCommon = document.getElementById('include-common');
+
+    let currentFile = null;
+    let lastData = null;
+
+    function setLoading(isLoading, text) {
+      spinner.classList.toggle('hidden', !isLoading);
+      if (text !== undefined) status.textContent = text || '';
+    }
+
+    function enableButtons(hasFile, hasData) {
+      extractBtn.disabled = !hasFile;
+      downloadBtn.disabled = !hasData;
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag');
+      if (e.dataTransfer.files.length) {
+        currentFile = e.dataTransfer.files[0];
+        fileInput.files = e.dataTransfer.files;
+        dropzone.querySelector('.dz-instructions p').innerHTML = `<strong>Selected:</strong> ${currentFile.name}`;
+        enableButtons(true, !!lastData);
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      currentFile = e.target.files[0];
+      if (currentFile) {
+        dropzone.querySelector('.dz-instructions p').innerHTML = `<strong>Selected:</strong> ${currentFile.name}`;
+        enableButtons(true, !!lastData);
+      }
+    });
+
+    function renderTable(data) {
+      window.__acronymData = data; // keep globally for CSV build
+      const rows = data.acronyms.map((a, idx) => {
+        const candOpts = (a.candidates || []).map((c, ci) => {
+          const label = `${c.definition} — [${c.source}] ${(c.confidence||0).toFixed(2)}`;
+          const selected = (a.chosen_index === ci) ? 'selected' : '';
+          return `<option value="${ci}" ${selected}>${label.replace(/</g,'&lt;')}</option>`;
+        }).join('');
+        const chosen = (a.candidates && a.candidates[a.chosen_index]) ? a.candidates[a.chosen_index] : null;
+        const defn = chosen ? chosen.definition : (a.definition || '');
+        const conf = chosen ? chosen.confidence : (a.confidence||0);
+        const src  = chosen ? chosen.source : (a.source||'none');
+        const note = (src.startsWith('web:') ? 'possible match (web)' : (a.note || ''));
+
+        return `
+          <tr data-index="${idx}">
+            <td><code>${a.term}</code></td>
+            <td class="defn">${defn ? defn : '<em>—</em>'}</td>
+            <td class="conf">${Number(conf||0).toFixed(2)}</td>
+            <td class="src"><span class="pill ${src.startsWith('web:') ? 'pill-web' : (src==='document' ? 'pill-doc' : (src==='canonical' ? 'pill-doc' : 'pill-none'))}">${src}</span></td>
+            <td class="note">${note || ''}</td>
+            <td class="excerpt">${a.first_seen_excerpt ? a.first_seen_excerpt : ''}</td>
+            <td class="picker">
+              ${(a.candidates && a.candidates.length > 0)
+                ? `<select class="cand-select">${candOpts}</select>`
+                : '<em>no candidates</em>'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      tableBody.innerHTML = rows;
+      resultsCard.classList.remove('hidden');
+
+      // Wire up selects
+      tableBody.querySelectorAll('.cand-select').forEach((sel, rowIdx) => {
+        sel.addEventListener('change', (e) => {
+          const tr = e.target.closest('tr');
+          const idx = Number(tr.getAttribute('data-index'));
+          const ci = Number(e.target.value);
+          __acronymData.acronyms[idx].chosen_index = ci;
+          const chosen = __acronymData.acronyms[idx].candidates[ci];
+          // update visible cells
+          tr.querySelector('.defn').textContent = chosen.definition;
+          tr.querySelector('.conf').textContent = Number(chosen.confidence||0).toFixed(2);
+          const srcEl = tr.querySelector('.src');
+          srcEl.innerHTML = `<span class="pill ${chosen.source.startsWith('web:') ? 'pill-web' : (chosen.source==='document' ? 'pill-doc' : (chosen.source==='canonical' ? 'pill-doc' : 'pill-none'))}">${chosen.source}</span>`;
+          tr.querySelector('.note').textContent = chosen.source.startsWith('web:') ? 'possible match (web)' : '';
+        });
+      });
+    }
+
+    function filterRows() {
+      const q = filterInput.value.toLowerCase();
+      Array.from(tableBody.querySelectorAll('tr')).forEach(tr => {
+        const text = tr.textContent.toLowerCase();
+        tr.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+    filterInput.addEventListener('input', filterRows);
+
+    async function extract() {
+      if (!currentFile) return;
+      const formData = new FormData();
+      formData.append('file', currentFile);
+
+      // Send a hint to backend via env only for now; future: add query param
+      setLoading(true, 'Extracting…');
+      enableButtons(false, false);
+
+      try {
+        const res = await fetch('/extract', { method: 'POST', body: formData });
+        const data = await res.json();
+        lastData = data;
+        renderTable(data);
+        status.textContent = `Found ${data.acronyms.length} acronym${data.acronyms.length===1?'':'s'}.`;
+        enableButtons(!!currentFile, true);
+      } catch (err) {
+        status.textContent = 'Error: ' + (err.message || err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function downloadClientCSV() {
+      if (!window.__acronymData) return;
+      const rows = [['Acronym','Definition','Confidence','Source','Note','FirstSeenExcerpt']];
+      for (const a of __acronymData.acronyms) {
+        let defn = a.definition || '';
+        let conf = a.confidence || 0;
+        let src = a.source || 'none';
+        if (a.candidates && a.candidates[a.chosen_index]) {
+          const ch = a.candidates[a.chosen_index];
+          defn = ch.definition;
+          conf = ch.confidence;
+          src  = ch.source;
+        }
+        rows.push([a.term, defn, String(conf), src, (src.startsWith('web:')?'possible match (web)':(a.note||'')), a.first_seen_excerpt||'']);
+      }
+      const csv = rows.map(r => r.map(v => {
+        const s = String(v).replaceAll('"','""');
+        return `"${s}"`;
+      }).join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'acronyms.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    extractBtn.addEventListener('click', extract);
+    downloadBtn.addEventListener('click', downloadClientCSV);
+  </script>
+</body>
+</html>
