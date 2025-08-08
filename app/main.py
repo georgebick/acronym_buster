@@ -35,32 +35,6 @@ logger = logging.getLogger('acronym-extractor')
 
 
 # --- Canonical map (always defined to avoid NameError) ---
-CANONICAL_MAP = {
-    'USA': 'United States of America',
-    'UK': 'United Kingdom',
-    'EU': 'European Union',
-    'UN': 'United Nations',
-    'NATO': 'North Atlantic Treaty Organization',
-    'CPU': 'Central Processing Unit',
-    'GPU': 'Graphics Processing Unit',
-    'RAM': 'Random Access Memory',
-    'ROM': 'Read-Only Memory',
-    'URL': 'Uniform Resource Locator',
-    'URI': 'Uniform Resource Identifier',
-    'HTTP': 'Hypertext Transfer Protocol',
-    'HTTPS': 'Hypertext Transfer Protocol Secure',
-    'HTML': 'HyperText Markup Language',
-    'XML': 'Extensible Markup Language',
-    'JSON': 'JavaScript Object Notation',
-    'PDF': 'Portable Document Format',
-    'API': 'Application Programming Interface',
-    'SEO': 'Search Engine Optimization',
-    'CIA': 'Central Intelligence Agency',
-    'FBI': 'Federal Bureau of Investigation',
-    'NASA': 'National Aeronautics and Space Administration',
-    'GDPR': 'General Data Protection Regulation',
-    'AI': 'Artificial intelligence',
-}
 
 app = FastAPI(title="Acronym Extractor")
 
@@ -113,7 +87,7 @@ async def learn(payload: LearnPayload):
 
 @app.get("/version")
 def version():
-    return {"version": "v3.4-dynamic-learning"}
+    return {"version": "v3.5-no-canonical-import-fix"}
 
 
 @app.get("/health")
@@ -211,8 +185,8 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
 
         # 6) LAST-RESORT fallback so the picker is never empty
         if not cands:
-            if acr in CANONICAL_MAP:
-                cands = [Candidate(definition=CANONICAL_MAP[acr], confidence=0.5, source='canonical')]
+            if False:  # canonical removed
+                cands = [Candidate(definition='(no definition found)', confidence=0.0, source='none')]
             else:
                 cands = [Candidate(definition='(no definition found)', confidence=0.0, source='none')]
 
