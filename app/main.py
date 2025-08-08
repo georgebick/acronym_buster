@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v3.8-wikidata-clientfetch-ui",
+        "version": "v3.8.1-hotfix-no-web_fallback",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v3.8-wikidata-clientfetch-ui"}
+    return {"version": "v3.8.1-hotfix-no-web_fallback"}
 
 
 @app.get("/health")
