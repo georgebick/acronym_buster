@@ -10,11 +10,20 @@ from pydantic import BaseModel
 from docx import Document as DocxDoc
 
 from .models import ExtractionResponse, AcronymResult
-from .extraction import sentence_split, find_acronym_candidates, find_definition_in_text, scan_tables_for_glossary
+from .extraction import sentence_split, find_acronym_candidates, find_definition_in_text, scan_tables_for_glossary, collect_global_longforms, INCLUDE_COMMON
 from .web_lookup import web_fallback
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Toggle common acronyms via env var INCLUDE_COMMON=true/false
+from os import getenv
+val = (getenv('INCLUDE_COMMON') or 'true').strip().lower()
+try:
+    import app.extraction as ex
+    ex.INCLUDE_COMMON = val in ('1','true','yes','y','on')
+except Exception:
+    pass
 
 app = FastAPI(title="Acronym Extractor")
 
@@ -45,11 +54,28 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
 
     # Extract paragraphs text
     text_parts = [p.text for p in doc.paragraphs if p.text and p.text.strip()]
-    full_text = "\n".join(text_parts)
+    # Footnotes (python-docx: doc.part.footnotes may exist)
+    try:
+        fnotes = []
+        fn = getattr(doc.part, 'footnotes', None)
+        if fn is not None:
+            for f in fn.part.element.xpath('//w:footnote//w:t', namespaces={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}):
+                if f.text and f.text.strip():
+                    fnotes.append(f.text.strip())
+        foot_text = '\n'.join(fnotes)
+    except Exception:
+        foot_text = ''
+
+    full_text = "\n".join(text_parts + ([foot_text] if foot_text else []))
     sentences = sentence_split(full_text)
 
     # From tables, get glossary pairs
     glossary = scan_tables_for_glossary(doc)
+
+    # Global longforms anywhere in the doc
+    global_map = collect_global_longforms(full_text)
+    for acr, longf in global_map.items():
+        glossary.setdefault(acr, longf)
 
     acronyms = find_acronym_candidates(full_text + "\n" + "\n".join(glossary.keys()))
 

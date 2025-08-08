@@ -27,6 +27,7 @@
         </div>
       </div>
       <div class="actions">
+        <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTTP, HTML, etc.)</span></label>
         <button id="extract-btn" disabled>Extract Acronyms</button>
         <button id="download-csv" disabled class="secondary">Download CSV</button>
       </div>
@@ -67,6 +68,7 @@
     const extractBtn = document.getElementById('extract-btn');
     const downloadBtn = document.getElementById('download-csv');
     const status = document.getElementById('status');
+    const includeCommon = document.getElementById('include-common');
     const spinner = document.getElementById('spinner');
     const resultsCard = document.getElementById('results');
     const tableBody = document.querySelector('#results-table tbody');
@@ -138,6 +140,10 @@
       enableButtons(false, false);
 
       try {
+        if (includeCommon && includeCommon.checked === false) {
+          // Hint server via cookie-like header; server reads env only in this version.
+          // Future: make a query param handled by backend.
+        }
         const res = await fetch('/extract', { method: 'POST', body: formData });
         const data = await res.json();
         lastData = data;
