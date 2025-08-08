@@ -8,6 +8,7 @@ from functools import lru_cache
 CACHE = {}
 import urllib.parse as _url
 import re
+import logging
 
 BASE_DIR = Path(__file__).resolve().parent
 CACHE_DB = BASE_DIR / "webcache.sqlite3"
@@ -85,6 +86,7 @@ def _score_candidate(acr: str, text: str, context: str) -> float:
 
 def re_split_nonword(s: str):
     import re
+import logging
     return re.split(r"[^A-Za-z0-9]+", s)
 
 def wikipedia_opensearch(acr: str, keyword: str | None = None, lang: str = 'en'):
@@ -380,6 +382,7 @@ def ietf_glossary(acr: str, keyword: str | None = None):
 
 def normalize_definition2(acr: str, source_text: str, title_hint: str | None = None):
     import re
+import logging
     A = acr.upper()
     def _initials_local(s: str):
         parts = re.split(r'[^A-Za-z0-9]+', s or '')
@@ -699,3 +702,27 @@ def pack_lookup(acr: str):
         except Exception:
             pass
     return out
+
+log = logging.getLogger('web-lookup')
+
+def get_web_candidates(acr: str, domain: str|None=None, *, lang: str='en', limit: int=8):
+    out = []
+    def add(items):
+        for d,s,sc in items or []:
+            out.append({"definition": d, "source": s, "confidence": float(sc)})
+    # Domain-first
+    if (domain or '').lower() in ('tech','technology','web','computing'):
+        add(pack_lookup(acr)); 
+        add(mdn_glossary_lookup(acr)); 
+        add(w3c_index_lookup(acr))
+    # Generic sources
+    add(wikipedia_search_titles(acr, lang=lang, limit=6))
+    add(acromine_lookup(acr, limit=6))
+    # Deduplicate by definition
+    seen = set(); uniq = []
+    for c in out:
+        key = (c["definition"] or "").strip().lower()
+        if not key or key in seen: continue
+        seen.add(key); uniq.append(c)
+    log.info("web_candidates(%s): %d", acr, len(uniq))
+    return uniq[:limit]

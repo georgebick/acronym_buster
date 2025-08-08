@@ -15,13 +15,13 @@ from app.extraction import sentence_split, find_acronym_candidates, find_definit
 # --- robust import for web lookups ---
 try:
     # absolute import first (more robust on Render)
-    from app.web_lookup import web_candidates
+    from app.web_lookup import get_web_candidates
 except Exception as _abs_err:
     try:
         # fallback to relative
-        from app.web_lookup import web_candidates  # type: ignore
+        from app.web_lookup import get_web_candidates
     except Exception as _rel_err:
-        def web_candidates(acr: str, context_text: str, limit: int = 5):
+        def get_web_candidates(acr: str, context_text: str, limit: int = 5):
             # Last-resort: no web results
             return []
 
@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.5-ui-rebuild",
+        "version": "v4.6-reset",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.5-ui-rebuild"}
+    return {"version": "v4.6-reset"}
 
 
 @app.get("/health")
@@ -191,7 +191,7 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
         # 4) Web candidates (free) — only if we still have nothing (to avoid 429s)
         try:
             if not cands:
-                wc = web_candidates(acr, full_text[:4000], limit=5)
+                wc = get_web_candidates(acr, full_text[:4000], limit=5)
                 for defn, dom, sc in (wc or []):
                     cands.append(Candidate(definition=defn, confidence=round(sc, 3), source=f'web:{dom}'))
         except Exception as e:
@@ -266,7 +266,7 @@ async def enrich(payload: EnrichPayload):
     ctx = payload.context or ""
     kw = payload.keyword or None
     try:
-        cands = web_candidates(term, ctx[:4000], limit=6, keyword=kw)
+        cands = get_web_candidates(term, ctx[:4000], limit=6, keyword=kw)
         # return Candidate-like dicts
         out = [{"definition": d, "source": f"web:{dom}", "confidence": float(sc)} for (d, dom, sc) in cands]
         return {"term": term, "candidates": out}
