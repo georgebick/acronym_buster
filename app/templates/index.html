@@ -7,6 +7,15 @@
   <link rel="stylesheet" href="/static/style.css" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    table.results { table-layout: fixed; width: 100%; }
+    table.results th, table.results td { overflow-wrap: anywhere; word-break: break-word; }
+    td.col-first-seen { max-width: 320px; white-space: normal; line-height: 1.35; }
+    td.col-pick { max-width: 260px; white-space: normal; }
+    td.col-term { max-width: 140px; }
+    .ellip { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  </style>
 </head>
 <body>
   <header class="hero gradient">
@@ -30,8 +39,7 @@
       <div class="actions">
         <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
         <div class="row">
-          <label>Domain: 
-            <select id="domain-select">
+          <label>Domain:
               <option value="">General</option>
               <option value="tech">Tech</option>
               <option value="gov">Government/Regulation</option>
@@ -39,7 +47,7 @@
               <option value="finance">Finance</option>
             </select>
           </label>
-          <label class="switch"><input type="checkbox" id="strict-initials" /> <span>Strict initials</span></label>
+          <label class="switch"> <span>Strict initials</span></label>
         </div>
         
         <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTML, PDF, USA…)</span></label>
@@ -82,7 +90,7 @@
         <input type="search" id="filter" placeholder="Filter acronyms or definitions…" />
       </div>
       <div class="table-wrap">
-        <table id="results-table">
+        <table class="results" id="results-table">
           <thead>
             <tr>
               <th style="min-width:120px">Acronym</th>

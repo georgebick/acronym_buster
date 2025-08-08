@@ -598,3 +598,30 @@ def definitions_net_lookup(acr: str):
     except Exception:
         return []
 
+
+
+def wikipedia_search_titles(acr: str, keyword: str|None=None, *, lang: str='en', limit: int=6):
+    # Use opensearch to get candidate page titles, then fetch summary for each title.
+    base = f"https://{lang}.wikipedia.org/w/api.php"
+    data = _http_get_json(base, {"action":"opensearch","limit":str(limit),"namespace":"0","format":"json","search":acr})
+    out = []
+    try:
+        if isinstance(data, list) and len(data) >= 4:
+            titles = data[1]
+            for t in titles[:limit]:
+                if not t: continue
+                summ = wikipedia_rest_summary_title(t, lang=lang)
+                if summ:
+                    norm = normalize_definition2(acr, summ.get("extract") or "", title_hint=summ.get("title"))
+                    if norm and _accept_expansion(acr, norm):
+                        out.append((norm, f"{lang}.wikipedia.org", 0.64))
+        return out
+    except Exception:
+        return out
+
+def wikipedia_rest_summary_title(title: str, *, lang: str='en'):
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title.replace(' ','_')}"
+    try:
+        return _http_get_json(url, {})
+    except Exception:
+        return {}
