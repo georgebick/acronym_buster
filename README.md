@@ -80,3 +80,9 @@ Alternatively, use the included `render.yaml` if you prefer Infrastructure-as-co
 - Backend now returns multiple **candidates** per acronym (document, canonical, Wikipedia/DDG).
 - UI shows a per-row **dropdown** to pick the correct definition before downloading CSV.
 - CSV is built client-side from your selections.
+
+
+### v3 improvements
+- Guaranteed **candidates** per acronym (never empty): document, canonical, web; fallback placeholder if none found.
+- Added **free web sources**: Wikipedia (two modes), DuckDuckGo, Wiktionary. All with timeouts and graceful failures.
+- **DEBUG** mode: set `DEBUG=true` (Render env var) to see web lookup logs in the service logs.
