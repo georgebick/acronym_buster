@@ -11,6 +11,20 @@ from docx import Document as DocxDoc
 
 from .models import ExtractionResponse, AcronymResult, Candidate, Candidate
 from .extraction import sentence_split, find_acronym_candidates, find_definition_in_text, scan_tables_for_glossary, collect_global_longforms, INCLUDE_COMMON
+
+# --- robust import for web lookups ---
+try:
+    # absolute import first (more robust on Render)
+    from app.web_lookup import web_candidates
+except Exception as _abs_err:
+    try:
+        # fallback to relative
+        from .web_lookup import web_candidates  # type: ignore
+    except Exception as _rel_err:
+        def web_candidates(acr: str, context_text: str, limit: int = 5):
+            # Last-resort: no web results
+            return []
+
 from .web_lookup import web_fallback
 from dotenv import load_dotenv
 import logging
@@ -87,7 +101,7 @@ async def learn(payload: LearnPayload):
 
 @app.get("/version")
 def version():
-    return {"version": "v3.5-no-canonical-import-fix"}
+    return {"version": "v3.6-web-hooked"}
 
 
 @app.get("/health")
