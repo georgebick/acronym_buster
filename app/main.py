@@ -9,11 +9,13 @@ from pathlib import Path
 from pydantic import BaseModel
 from docx import Document as DocxDoc
 
-from .models import ExtractionResponse, AcronymResult, Candidate
+from .models import ExtractionResponse, AcronymResult, Candidate, Candidate
 from .extraction import sentence_split, find_acronym_candidates, find_definition_in_text, scan_tables_for_glossary, collect_global_longforms, INCLUDE_COMMON
 from .web_lookup import web_fallback
 from dotenv import load_dotenv
 import logging
+import sqlite3
+from pathlib import Path
 
 load_dotenv()
 
@@ -62,9 +64,56 @@ CANONICAL_MAP = {
 
 app = FastAPI(title="Acronym Extractor")
 
+# --- simple sqlite store for learned definitions ---
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / 'store.sqlite3'
+
+def _db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("CREATE TABLE IF NOT EXISTS learned (term TEXT PRIMARY KEY, definition TEXT, source TEXT, confidence REAL DEFAULT 0.9)")
+    return conn
+
+def get_learned(term: str):
+    try:
+        conn = _db()
+        cur = conn.execute("SELECT definition, source, confidence FROM learned WHERE term=?", (term,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {"definition": row[0], "source": row[1], "confidence": float(row[2])}
+    except Exception as e:
+        logger.warning(f'learned get error: {e}')
+    return None
+
+def set_learned(term: str, definition: str, source: str, confidence: float = 0.9):
+    try:
+        conn = _db()
+        conn.execute("INSERT OR REPLACE INTO learned(term, definition, source, confidence) VALUES(?,?,?,?)", (term, definition, source, confidence))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.warning(f'learned set error: {e}')
+        return False
+
+
+
+from pydantic import BaseModel
+
+class LearnPayload(BaseModel):
+    term: str
+    definition: str
+    source: str = "user"
+    confidence: float = 0.9
+
+@app.post("/learn")
+async def learn(payload: LearnPayload):
+    ok = set_learned(payload.term.upper(), payload.definition, payload.source, payload.confidence)
+    return {"ok": ok}
+
 @app.get("/version")
 def version():
-    return {"version": "v3.3-canonical-defined"}
+    return {"version": "v3.4-dynamic-learning"}
 
 
 @app.get("/health")
@@ -137,9 +186,10 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
         else:
             excerpt = None
 
-        # 3) Canonical known-good
-        if acr in CANONICAL_MAP:
-            cands.append(Candidate(definition=CANONICAL_MAP[acr], confidence=0.84, source='canonical'))
+        # 3) Learned user choice (if any)
+        learned = get_learned(acr)
+        if learned:
+            cands.append(Candidate(definition=learned['definition'], confidence=float(learned.get('confidence',0.9)), source=learned.get('source','learned')))
 
         # 4) Web candidates (free)
         try:
@@ -166,14 +216,14 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
             else:
                 cands = [Candidate(definition='(no definition found)', confidence=0.0, source='none')]
 
-        # 7) Pick chosen index: prefer document > canonical > web
+        # 7) Pick chosen index: prefer document > learned > web
         chosen_idx = 0
         for i, c in enumerate(cands):
             if c.source == 'document':
                 chosen_idx = i; break
         else:
             for i, c in enumerate(cands):
-                if c.source == 'canonical':
+                if c.source in ('learned','user'):
                     chosen_idx = i; break
 
         chosen = cands[chosen_idx]

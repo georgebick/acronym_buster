@@ -86,3 +86,10 @@ Alternatively, use the included `render.yaml` if you prefer Infrastructure-as-co
 - Guaranteed **candidates** per acronym (never empty): document, canonical, web; fallback placeholder if none found.
 - Added **free web sources**: Wikipedia (two modes), DuckDuckGo, Wiktionary. All with timeouts and graceful failures.
 - **DEBUG** mode: set `DEBUG=true` (Render env var) to see web lookup logs in the service logs.
+
+
+### v3.4 (Dynamic learning; no hard-coded canonical map)
+- Removed the static canonical map; instead, the app **learns** from user picks.
+- New `POST /learn` endpoint stores the chosen definition per acronym in a local **sqlite** DB (`app/store.sqlite3`).
+- On subsequent uploads, learned definitions are injected as candidates and preferred.
+- Fixed missing import for `web_candidates` and added debug logs.

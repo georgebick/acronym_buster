@@ -56,3 +56,5 @@ code { background: #111827; padding: 2px 6px; border-radius: 4px; }
 .pill-none { background: #2a2a2a; color: #e0e0e0; border-color: #4a4a4a; }
 
 .footer { padding: 30px 0 60px; color: var(--muted); text-align: center; }
+
+tr.saved { outline: 2px solid #6be675; outline-offset: -2px; transition: outline 0.8s ease; }

@@ -147,7 +147,7 @@
 
       // Wire up selects
       tableBody.querySelectorAll('.cand-select').forEach((sel, rowIdx) => {
-        sel.addEventListener('change', (e) => {
+        sel.addEventListener('change', async (e) => {
           const tr = e.target.closest('tr');
           const idx = Number(tr.getAttribute('data-index'));
           const ci = Number(e.target.value);
@@ -159,6 +159,13 @@
           const srcEl = tr.querySelector('.src');
           srcEl.innerHTML = `<span class="pill ${chosen.source.startsWith('web:') ? 'pill-web' : (chosen.source==='document' ? 'pill-doc' : (chosen.source==='canonical' ? 'pill-doc' : 'pill-none'))}">${chosen.source}</span>`;
           tr.querySelector('.note').textContent = chosen.source.startsWith('web:') ? 'possible match (web)' : '';
+          // persist choice so next uploads auto-pick it
+          try {
+            await fetch('/learn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ term: __acronymData.acronyms[idx].term, definition: chosen.definition, source: 'learned', confidence: chosen.confidence || 0.9 }) });
+            tr.classList.add('saved');
+            setTimeout(() => tr.classList.remove('saved'), 800);
+          } catch (_) {}
+
         });
       });
     }
