@@ -4,6 +4,7 @@ import time, math, random, json, sqlite3
 from pathlib import Path
 
 import httpx
+import re
 
 BASE_DIR = Path(__file__).resolve().parent
 CACHE_DB = BASE_DIR / "webcache.sqlite3"
@@ -136,8 +137,7 @@ def wikidata_search(acr: str, keyword: str | None = None):
     return out
 
 
-def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None) -> List[Tuple[str,str,float]]:
-    # caching
+def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None):
     key = f"{acr}|{(keyword or '').strip().lower()}"
     cached = _cache_get(key)
     if cached:
@@ -145,20 +145,67 @@ def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | N
 
     out = []
     seen = set()
+
     def add(items):
         for defn, dom, sc in (items or []):
-            k = (defn.strip().lower(), dom)
-            if k in seen: continue
+            d = (defn or '').strip()
+            if not d or _is_disambiguation_text(d): 
+                continue
+            k = (d.lower(), dom)
+            if k in seen: 
+                continue
             seen.add(k)
-            score = sc
-            score = max(score, _score_candidate(acr, defn, context_text))
-            out.append((defn, dom, score))
+            # re-score with context + initials
+            score = max(sc, _score_candidate(acr, d, context_text))
+            out.append((d, dom, score))
 
-    add(wikipedia_rest_summary(acr, keyword))
+    # Prefer a title->summary chain first (better than raw opensearch descs)
+    add(wikipedia_title_search(acr, keyword))
+    if len(out) < limit: add(wikipedia_rest_summary(acr, keyword))
     if len(out) < limit: add(wikipedia_opensearch(acr, keyword))
     if len(out) < limit: add(wiktionary_search(acr, keyword))
     if len(out) < limit: add(wikidata_search(acr, keyword))
 
+    out = _prefer_exact_initials(acr, out)
     out = sorted(out, key=lambda x: x[2], reverse=True)[:limit]
     _cache_set(key, out)
+    return out
+
+
+def _is_disambiguation_text(text: str) -> bool:
+    t = (text or '').lower()
+    return ('may refer to' in t) or ('disambiguation' in t) or ('list of' in t)
+
+def _initials(s: str) -> str:
+    parts = re.split(r'[^A-Za-z0-9]+', s or '')
+    return ''.join([p[0].upper() for p in parts if p])
+
+def _prefer_exact_initials(acr: str, defs):
+    a = acr.upper()
+    # boost exact-match initials, then partial, then others
+    scored = []
+    for (d, dom, sc) in defs:
+        ini = _initials(d)
+        bonus = 0.0
+        if ini == a: bonus = 0.3
+        elif a in ini or ini in a: bonus = 0.15
+        scored.append((d, dom, min(0.95, sc + bonus)))
+    return scored
+
+def wikipedia_title_search(acr: str, keyword: str | None = None):
+    # search for titles first; then fetch the summary for the top title
+    q = acr if not keyword else f"{acr} {keyword}"
+    url = "https://en.wikipedia.org/w/api.php"
+    data = _http_get_json(url, {"action":"opensearch","limit":"6","namespace":"0","format":"json","search":q})
+    titles = []
+    if isinstance(data, list) and len(data) >= 2:
+        titles = data[1] or []
+    out = []
+    for t in titles[:3]:  # check top 3 titles
+        u = f"https://en.wikipedia.org/api/rest_v1/page/summary/{t}"
+        js = _http_get_json(u, {})
+        if isinstance(js, dict):
+            txt = (js.get("extract") or js.get("description") or "").strip()
+            if txt and not _is_disambiguation_text(txt):
+                out.append((txt.split(".")[0], "en.wikipedia.org", 0.62))
     return out
