@@ -4,6 +4,8 @@ import time, math, random, json, sqlite3
 from pathlib import Path
 
 import httpx
+from functools import lru_cache
+CACHE = {}
 import urllib.parse as _url
 import re
 
@@ -559,7 +561,9 @@ def wordsapi_lookup(acr: str):
     url = f"https://{host}/words/{_url.quote(acr)}"
     try:
         # _http_get_json doesn't support custom headers; inline request
-        import httpx as _hx
+        import httpx
+from functools import lru_cache
+CACHE = {} as _hx
         headers = {"X-RapidAPI-Key": key, "X-RapidAPI-Host": host}
         with _hx.Client(timeout=10.0) as client:
             r = client.get(url, headers=headers)
@@ -625,3 +629,73 @@ def wikipedia_rest_summary_title(title: str, *, lang: str='en'):
         return _http_get_json(url, {})
     except Exception:
         return {}
+
+
+def _cached_get(url: str, params: dict[str,str] | None=None, timeout: float=5.0):
+    key = url + "?" + "&".join(sorted((params or {}).items()))
+    if key in CACHE: 
+        return CACHE[key]
+    js = _http_get_json(url, params or {})
+    CACHE[key] = js
+    return js
+
+def wikipedia_extract_strict(acr: str, title: str, extract: str):
+    # Try to find an expansion like 'Search engine optimization (SEO)' or reverse
+    txt = (extract or "").strip()
+    # 1) Parenthetical pattern
+    m = re.search(r"([A-Z][A-Za-z][^()]{2,80})\s*\(\s*"+re.escape(acr)+r"\s*\)", txt)
+    if m and _accept_expansion(acr, m.group(1), strict=True):
+        return m.group(1)
+    # 2) Reverse: 'SEO (Search engine optimization)'
+    m = re.search(re.escape(acr)+r"\s*\(\s*([^()]{2,80})\)", txt)
+    if m and _accept_expansion(acr, m.group(1), strict=True):
+        return m.group(1)
+    # 3) First clause up to dash or period
+    m = re.match(r"([^\.\–\-]{2,120})", txt)
+    if m and _accept_expansion(acr, m.group(1), strict=True):
+        return m.group(1)
+    return ""
+
+def mdn_glossary_lookup(acr: str):
+    try:
+        url = "https://developer.mozilla.org/api/v1/search"
+        js = _cached_get(url, {"q": acr, "locale":"en-US"})
+        out = []
+        docs = (js.get("documents") or []) if isinstance(js, dict) else []
+        for d in docs[:6]:
+            slug = (d.get("slug") or "")
+            title = (d.get("title") or "").strip()
+            if "glossary" in slug.lower():
+                exp = title if _accept_expansion(acr, title, strict=False) else ""
+                if exp:
+                    out.append((exp, "mdn", 0.68))
+        return out
+    except Exception:
+        return []
+
+def w3c_index_lookup(acr: str):
+    common = {
+        "HTML":"HyperText Markup Language",
+        "CSS":"Cascading Style Sheets",
+        "SVG":"Scalable Vector Graphics",
+        "ARIA":"Accessible Rich Internet Applications",
+        "WCAG":"Web Content Accessibility Guidelines"
+    }
+    val = common.get(acr.upper())
+    return [(val, "w3c", 0.66)] if val else []
+
+def pack_lookup(acr: str):
+    import json, os
+    base = os.path.join(os.path.dirname(__file__), "packs")
+    out = []
+    for name,src in (("nist.json","nist"),("nasa.json","nasa")):
+        p = os.path.join(base, name)
+        try:
+            with open(p,"r",encoding="utf-8") as f:
+                data = json.load(f)
+            val = data.get(acr.upper())
+            if val:
+                out.append((val, f"pack-{src}", 0.78))
+        except Exception:
+            pass
+    return out

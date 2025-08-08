@@ -459,5 +459,119 @@
   const _oldRenderResults = renderResults;
   renderResults = function(data){ _oldRenderResults(data); applyTableToggles(); };
 </script>
+
+<div id="progress" class="progress hidden">
+  <div class="spinner"></div>
+  <div class="label">Extracting acronyms…</div>
+</div>
+
+<div id="summary" class="summary hidden"></div>
+<div id="results-wrap" class="results-wrap hidden"></div>
+
+<script>
+function confidenceBar(p){ 
+  const val = Math.max(0, Math.min(100, Math.round(p*100)));
+  return `<div class="bar"><div class="fill" style="width:${val}%"></div><span>${val}%</span></div>`;
+}
+function renderResults(data){
+  const rows = data?.acronyms || [];
+  window.__lastResults = rows;
+  const summary = document.getElementById('summary');
+  const fromDoc = rows.filter(r => (r.candidates||[]).some(c => (c.source||'').includes('document'))).length;
+  const fromWeb = rows.filter(r => (r.candidates||[]).some(c => (c.source||'').match(/wikipedia|wiktionary|mdn|w3c|acromine|pack/i))).length;
+  summary.innerHTML = `<div class="summary-grid">
+    <div><div class="s-ttl">Acronyms found</div><div class="s-val">${rows.length}</div></div>
+    <div><div class="s-ttl">From document</div><div class="s-val">${fromDoc}</div></div>
+    <div><div class="s-ttl">From web/APIs</div><div class="s-val">${fromWeb}</div></div>
+  </div>`;
+  summary.classList.remove('hidden');
+
+  const wrap = document.getElementById('results-wrap');
+  let html = `<table class="results"><thead><tr>
+    <th style="width:12rem">Acronym</th>
+    <th>Top pick</th>
+    <th style="width:9rem">Confidence</th>
+    <th style="width:13rem">Source</th>
+    <th>First seen</th>
+    <th style="width:9rem">Actions</th>
+  </tr></thead><tbody>`;
+  rows.forEach((r, i) => {
+    const pick = (r.candidates||[])[0] || {};
+    const conf = pick.confidence ?? 0;
+    const src = pick.source || '';
+    const seen = (r.first_seen || '').slice(0, 200);
+    html += `<tr data-index="${i}">
+      <td class="term"><strong>${r.term}</strong></td>
+      <td class="pick"><div class="ellip">${(pick.definition||'—')}</div></td>
+      <td class="conf">${confidenceBar(conf)}</td>
+      <td class="src">${src}</td>
+      <td class="first-seen"><div class="ellip">${seen}</div></td>
+      <td class="actions">
+        <button type="button" class="btn btn-small show-cands">Candidates</button>
+        <button type="button" class="btn btn-small save-pick">Save</button>
+      </td>
+    </tr>
+    <tr class="cands-row hidden"><td colspan="6">
+      ${(r.candidates||[]).map((c,ci)=>`
+        <div class="cand-line">
+          <span class="pill pill-${c.source||'web'}">${c.source||'web'}</span>
+          <span class="cand-conf">${Math.round((c.confidence||0)*100)}%</span>
+          <span class="cand-def">${c.definition||''}</span>
+          <span class="cand-act">
+            <button class="btn btn-tiny make-top" data-idx="${ci}">Make top</button>
+            <button class="btn btn-tiny learn" data-idx="${ci}">Learn</button>
+          </span>
+        </div>`).join('')}
+    </td></tr>`
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  wrap.classList.remove('hidden');
+}
+document.addEventListener('click', (e)=>{
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+  if (e.target.closest('.show-cands')){
+    const nxt = tr.nextElementSibling;
+    if (nxt && nxt.classList.contains('cands-row')) nxt.classList.toggle('hidden');
+  } else if (e.target.closest('.make-top')){
+    const ci = parseInt(e.target.dataset.idx,10);
+    const idx = parseInt(tr.dataset.index,10);
+    const row = window.__lastResults[idx];
+    const c = row.candidates[ci];
+    row.candidates = [c].concat(row.candidates.filter((_,j)=>j!==ci));
+    renderResults({ acronyms: window.__lastResults });
+  } else if (e.target.closest('.learn')){
+    const ci = parseInt(e.target.dataset.idx,10);
+    const idx = parseInt(tr.dataset.index,10);
+    const row = window.__lastResults[idx];
+    const c = row.candidates[ci];
+    const fd = new FormData();
+    fd.append('term', row.term);
+    fd.append('definition', c.definition||'');
+    fd.append('source', c.source||'user');
+    fetch('/feedback', { method:'POST', body: fd }).then(()=>{
+      e.target.textContent = 'Saved'; e.target.disabled = true;
+    });
+  } else if (e.target.closest('.save-pick')){
+    const idx = parseInt(tr.dataset.index,10);
+    const row = window.__lastResults[idx];
+    const c = row.candidates?.[0];
+    if (!c) return;
+    const fd = new FormData();
+    fd.append('term', row.term);
+    fd.append('definition', c.definition||'');
+    fd.append('source', c.source||'user');
+    fetch('/feedback', { method:'POST', body: fd }).then(()=>{
+      e.target.textContent = 'Saved'; e.target.disabled = true;
+    });
+  }
+});
+
+// Progress overlay helpers
+function showProgress(){ document.getElementById('progress')?.classList.remove('hidden'); }
+function hideProgress(){ document.getElementById('progress')?.classList.add('hidden'); }
+</script>
+
 </body>
 </html>
