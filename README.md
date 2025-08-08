@@ -74,3 +74,9 @@ README.md
 4. Deploy. Your app will be available at `https://<your-service-name>.onrender.com`.
 
 Alternatively, use the included `render.yaml` if you prefer Infrastructure-as-code.
+
+
+### New (user choice)
+- Backend now returns multiple **candidates** per acronym (document, canonical, Wikipedia/DDG).
+- UI shows a per-row **dropdown** to pick the correct definition before downloading CSV.
+- CSV is built client-side from your selections.
