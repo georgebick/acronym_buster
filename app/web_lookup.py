@@ -4,6 +4,7 @@ import time, math, random, json, sqlite3
 from pathlib import Path
 
 import httpx
+import urllib.parse as _url
 import re
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -84,9 +85,9 @@ def re_split_nonword(s: str):
     import re
     return re.split(r"[^A-Za-z0-9]+", s)
 
-def wikipedia_opensearch(acr: str, keyword: str | None = None):
+def wikipedia_opensearch(acr: str, keyword: str | None = None, lang: str = 'en'):
     q = acr if not keyword else f"{acr} {keyword}"
-    url = "https://en.wikipedia.org/w/api.php"
+    url = f"https://{lang}.wikipedia.org/w/api.php"
     params = {"action":"opensearch","limit":"6","namespace":"0","format":"json","search":q}
     data = _http_get_json(url, params)
     out = []
@@ -100,9 +101,9 @@ def wikipedia_opensearch(acr: str, keyword: str | None = None):
                     out.append((norm, "en.wikipedia.org", 0.58))
     return out
 
-def wikipedia_rest_summary(acr: str, keyword: str | None = None):
+def wikipedia_rest_summary(acr: str, keyword: str | None = None, lang: str = 'en'):
     page = acr if not keyword else f"{acr} ({keyword})"
-    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page}"
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page}"
     data = _http_get_json(url, {})
     out = []
     if isinstance(data, dict):
@@ -140,8 +141,8 @@ def wikidata_search(acr: str, keyword: str | None = None):
     return out
 
 
-def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None):
-    key = f"{acr}|{(keyword or '').strip().lower()}"
+def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None, lang: str = 'en', domain: str | None = None, strict_initials: bool = False):
+    key = f"{acr}|{(keyword or '').strip().lower()}|{lang}|{domain}|{strict_initials}"
     cached = _cache_get(key)
     if cached:
         return cached[:limit]
@@ -163,13 +164,19 @@ def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | N
             out.append((d, dom, score))
 
     # Prefer a title->summary chain first (better than raw opensearch descs)
-    add(wikipedia_title_search(acr, keyword))
-    if len(out) < limit: add(wikipedia_rest_summary(acr, keyword))
-    if len(out) < limit: add(wikipedia_opensearch(acr, keyword))
+    add(wikipedia_title_search(acr, keyword, lang=lang))
+    if len(out) < limit: add(wikipedia_rest_summary(acr, keyword, lang=lang))
+    if len(out) < limit: add(wikipedia_opensearch(acr, keyword, lang=lang))
     if len(out) < limit: add(wiktionary_search(acr, keyword))
     if len(out) < limit: add(wikidata_search(acr, keyword))
+    # DBpedia & IETF last to reduce API load
+    if len(out) < limit: add(dbpedia_search(acr, keyword, lang=lang))
+    if len(out) < limit: add(ietf_glossary(acr, keyword))
 
     out = _prefer_exact_initials(acr, out)
+    # strict filter if requested
+    if strict_initials:
+        out = [x for x in out if _initials(x[0]) == acr.upper()]
     out = sorted(out, key=lambda x: x[2], reverse=True)[:limit]
     _cache_set(key, out)
     return out
@@ -195,16 +202,16 @@ def _prefer_exact_initials(acr: str, defs):
         scored.append((d, dom, min(0.95, sc + bonus)))
     return scored
 
-def wikipedia_title_search(acr: str, keyword: str | None = None):
+def wikipedia_title_search(acr: str, keyword: str | None = None, lang: str = 'en'):
     q = acr if not keyword else f"{acr} {keyword}"
-    url = "https://en.wikipedia.org/w/api.php"
+    url = f"https://{lang}.wikipedia.org/w/api.php"
     data = _http_get_json(url, {"action":"opensearch","limit":"6","namespace":"0","format":"json","search":q})
     titles = []
     if isinstance(data, list) and len(data) >= 2:
         titles = data[1] or []
     out = []
     for t in titles[:3]:
-        u = f"https://en.wikipedia.org/api/rest_v1/page/summary/{t}"
+        u = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{t}"
         js = _http_get_json(u, {})
         if isinstance(js, dict):
             txt = (js.get("extract") or js.get("description") or "").strip()
@@ -283,3 +290,63 @@ def normalize_definition(acr: str, source_text: str, title_hint: str | None = No
 
     # 4) If nothing worked, return empty so caller can drop it
     return ''
+
+
+def _accept_expansion(acr: str, phrase: str, strict: bool = False) -> bool:
+    A = acr.upper()
+    if not phrase: return False
+    if phrase.strip().upper() == A: return False
+    ini = _initials(phrase)
+    if strict:
+        return ini == A
+    return (ini == A) or (A in ini) or (ini in A)
+
+def dbpedia_search(acr: str, keyword: str | None = None, lang: str = "en"):
+    # Use DBpedia spotlight/lookup-lite via SPARQL: fetch rdfs:label matching acronym or label containing it
+    # We prefer labels whose initials match.
+    sparql = f"""SELECT DISTINCT ?label ?comment WHERE {{
+  ?s rdfs:label ?label . FILTER (lang(?label) = '{lang}').
+  OPTIONAL {{ ?s rdfs:comment ?comment . FILTER (lang(?comment) = '{lang}') }}
+  FILTER (CONTAINS(LCASE(?label), LCASE('{acr}')))
+}} LIMIT 10
+"""
+    url = "https://dbpedia.org/sparql"
+    q = {"query": sparql, "format":"application/sparql-results+json"}
+    data = _http_get_json(url, q)
+    out = []
+    if isinstance(data, dict):
+        bindings = (data.get('results') or {}).get('bindings') or []
+        for b in bindings:
+            lab = (b.get('label',{}).get('value') or '').strip()
+            com = (b.get('comment',{}).get('value') or '').strip()
+            if lab and _accept_expansion(acr, lab):
+                out.append((lab, "dbpedia.org", 0.53))
+            elif com:
+                # mine comment
+                norm = normalize_definition(acr, com, title_hint=lab)
+                if norm and _accept_expansion(acr, norm):
+                    out.append((norm, "dbpedia.org", 0.5))
+    return out
+
+def ietf_glossary(acr: str, keyword: str | None = None):
+    # RFC Editor glossary JSON (static URL often used in docs; may change). 
+    # We'll try a simple heuristic via Wikipedia first if IETF not reachable.
+    # Placeholder: attempt well-known terms
+    common = {
+        "HTTP": "Hypertext Transfer Protocol",
+        "URL": "Uniform Resource Locator",
+        "TLS": "Transport Layer Security",
+        "TCP": "Transmission Control Protocol",
+        "UDP": "User Datagram Protocol",
+        "IP": "Internet Protocol",
+        "DNS": "Domain Name System",
+        "FTP": "File Transfer Protocol",
+        "SMTP": "Simple Mail Transfer Protocol",
+        "IMAP": "Internet Message Access Protocol",
+        "SSH": "Secure Shell",
+    }
+    out = []
+    val = common.get(acr.upper())
+    if val:
+        out.append((val, "ietf-glossary", 0.62))
+    return out

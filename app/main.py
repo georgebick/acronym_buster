@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.0-clean-defs-progress",
+        "version": "v4.1-quality-pack",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.0-clean-defs-progress"}
+    return {"version": "v4.1-quality-pack"}
 
 
 @app.get("/health")
@@ -274,3 +274,11 @@ async def enrich(payload: EnrichPayload):
         logger.warning(f"/enrich error for {term}: {e}")
         return {"term": term, "candidates": []}
 
+
+
+def detect_language(text: str) -> str:
+    try:
+        lg = _lang_detect((text or '')[:2000])
+        return lg if lg in ('en','fr','es','de','it','pt','nl','sv','no','da','fi','pl','cs','ro','hu','ru') else 'en'
+    except Exception:
+        return 'en'
