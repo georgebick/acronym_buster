@@ -25,7 +25,7 @@ except Exception as _abs_err:
             # Last-resort: no web results
             return []
 
-from .web_lookup import web_fallback
+
 from dotenv import load_dotenv
 import logging
 import sqlite3
@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v3.8.1-hotfix-no-web_fallback",
+        "version": "v3.8.2-import-fix",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v3.8.1-hotfix-no-web_fallback"}
+    return {"version": "v3.8.2-import-fix"}
 
 
 @app.get("/health")
