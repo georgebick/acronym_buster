@@ -94,20 +94,23 @@ def wikipedia_opensearch(acr: str, keyword: str | None = None):
         titles, descs, links = data[1], data[2], data[3]
         for t, d, l in zip(titles, descs, links):
             txt = (d or t or "").strip()
-            if txt:
-                out.append((txt, "en.wikipedia.org", 0.55))
+            if txt and not _is_disambiguation_text(txt):
+                norm = normalize_definition(acr, txt, title_hint=t)
+                if norm:
+                    out.append((norm, "en.wikipedia.org", 0.58))
     return out
 
 def wikipedia_rest_summary(acr: str, keyword: str | None = None):
-    # Try reading page summary for exact acronym
     page = acr if not keyword else f"{acr} ({keyword})"
     url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page}"
     data = _http_get_json(url, {})
     out = []
     if isinstance(data, dict):
         txt = (data.get("extract") or data.get("description") or "").strip()
-        if txt:
-            out.append((txt.split(".")[0], "en.wikipedia.org", 0.58))
+        if txt and not _is_disambiguation_text(txt):
+            norm = normalize_definition(acr, txt, title_hint=data.get("title"))
+            if norm:
+                out.append((norm, "en.wikipedia.org", 0.64))
     return out
 
 def wiktionary_search(acr: str, keyword: str | None = None):
@@ -193,7 +196,6 @@ def _prefer_exact_initials(acr: str, defs):
     return scored
 
 def wikipedia_title_search(acr: str, keyword: str | None = None):
-    # search for titles first; then fetch the summary for the top title
     q = acr if not keyword else f"{acr} {keyword}"
     url = "https://en.wikipedia.org/w/api.php"
     data = _http_get_json(url, {"action":"opensearch","limit":"6","namespace":"0","format":"json","search":q})
@@ -201,11 +203,83 @@ def wikipedia_title_search(acr: str, keyword: str | None = None):
     if isinstance(data, list) and len(data) >= 2:
         titles = data[1] or []
     out = []
-    for t in titles[:3]:  # check top 3 titles
+    for t in titles[:3]:
         u = f"https://en.wikipedia.org/api/rest_v1/page/summary/{t}"
         js = _http_get_json(u, {})
         if isinstance(js, dict):
             txt = (js.get("extract") or js.get("description") or "").strip()
             if txt and not _is_disambiguation_text(txt):
-                out.append((txt.split(".")[0], "en.wikipedia.org", 0.62))
+                norm = normalize_definition(acr, txt, title_hint=t)
+                if norm:
+                    out.append((norm, "en.wikipedia.org", 0.68))
     return out
+
+
+# --- Definition normalization: extract clean expansion only ---
+def _split_sentences(text: str):
+    # very light split; we want first sentence mostly
+    return re.split(r'(?<=[.!?])\s+', text or '')
+
+def _clean_phrase(s: str):
+    s = re.sub(r'\s+', ' ', (s or '').strip())
+    # remove trailing punctuation
+    s = re.sub(r'[;,:.\-]+$', '', s)
+    # drop leading articles
+    s = re.sub(r'^(the|a|an)\s+', '', s, flags=re.I)
+    return s.strip()
+
+def _initials(s: str):
+    parts = re.split(r'[^A-Za-z0-9]+', s or '')
+    return ''.join([p[0].upper() for p in parts if p])
+
+def _looks_like_all_caps(s: str):
+    return bool(re.fullmatch(r'[A-Z0-9]+', (s or '').strip()))
+
+def normalize_definition(acr: str, source_text: str, title_hint: str | None = None):
+    A = acr.upper()
+    # 1) If title looks like a proper expansion (not all caps) and initials match, take it
+    if title_hint and not _looks_like_all_caps(title_hint) and _initials(title_hint) == A:
+        cand = _clean_phrase(title_hint)
+        if cand.upper() != A and len(cand) > len(A)+1:
+            return cand
+
+    t = (source_text or '').strip()
+    first = _split_sentences(t)[0] if t else ''
+    first = first.strip()
+
+    # 2) Common patterns
+    patterns = [
+        r'\bstands for\b\s+([^.;:,]+)',
+        r'\bis an?\s+([^.;:,]+)',
+        r'\bis the\s+([^.;:,]+)',
+        r'\bacronym for\b\s+([^.;:,]+)',
+        r'\babbreviation for\b\s+([^.;:,]+)',
+        r'\bshort for\b\s+([^.;:,]+)',
+        r'\bmeaning\b\s+([^.;:,]+)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, first, flags=re.I)
+        if m:
+            cand = _clean_phrase(m.group(1))
+            if _initials(cand) in (A, ) or A in _initials(cand) or len(cand.split()) <= 8:
+                if cand.upper() != A and len(cand) > len(A)+1:
+                    return cand
+
+    # 3) Fallback: longest capitalized chunk whose initials match
+    tokens = re.split(r'[^A-Za-z0-9]+', first)
+    best = []
+    for i in range(len(tokens)):
+        for j in range(i+1, min(i+8, len(tokens))+1):
+            phrase = ' '.join(tokens[i:j])
+            if len(phrase) < len(A)+1:
+                continue
+            if _initials(phrase) == A:
+                best.append(phrase)
+    if best:
+        best.sort(key=len, reverse=True)
+        cand = _clean_phrase(best[0])
+        if cand.upper() != A and len(cand) > len(A)+1:
+            return cand
+
+    # 4) If nothing worked, return empty so caller can drop it
+    return ''

@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v3.9-wiki-postproc-ui-fixes",
+        "version": "v4.0-clean-defs-progress",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v3.9-wiki-postproc-ui-fixes"}
+    return {"version": "v4.0-clean-defs-progress"}
 
 
 @app.get("/health")

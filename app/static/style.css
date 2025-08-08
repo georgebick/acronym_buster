@@ -69,3 +69,8 @@ tr.saved { outline: 2px solid #6be675; outline-offset: -2px; transition: outline
 .bar { width: 120px; height: 8px; background:#eee; border-radius: 999px; overflow:hidden; }
 .bar .fill { height: 100%; background: linear-gradient(90deg,#34d399,#10b981); }
 #footer-ver { display:flex; justify-content:center; margin: 24px 0; }
+
+/* progress */
+.progress-container { position: relative; height: 10px; background:#eee; border-radius:999px; margin: 10px 0 14px; overflow:hidden; }
+.progress-bar { height:100%; width:0%; background: linear-gradient(90deg,#22c55e,#16a34a); transition: width .2s ease; }
+.progress-text { font-size: 12px; margin-bottom: 6px; color:#555; }
