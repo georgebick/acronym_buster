@@ -28,6 +28,7 @@
         </div>
       </div>
       <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
         <div class="row">
           <label>Domain: 
             <select id="domain-select">
@@ -40,10 +41,11 @@
           </label>
           <label class="switch"><input type="checkbox" id="strict-initials" /> <span>Strict initials</span></label>
         </div>
-        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
+        
         <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTML, PDF, USA…)</span></label>
       </div>
       <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
         <div class="row">
           <label>Domain: 
             <select id="domain-select">
@@ -56,7 +58,7 @@
           </label>
           <label class="switch"><input type="checkbox" id="strict-initials" /> <span>Strict initials</span></label>
         </div>
-        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
+        
         <button id="extract-btn" disabled>Extract Acronyms</button>
         <button id="download-csv" disabled class="secondary">Download CSV</button>
       </div>
@@ -65,6 +67,14 @@
     </section>
 
     <div class="progress-container hidden"><div class="progress-bar"></div><div class="progress-text">Preparing…</div><button type="button" id="cancel-btn" class="btn btn-link">Cancel</button></div>
+      
+      <div class="table-controls">
+        <label><input type="checkbox" id="col-toggle-source" checked /> Source</label>
+        <label><input type="checkbox" id="col-toggle-confidence" checked /> Confidence</label>
+        <label><input type="checkbox" id="col-toggle-gauge" checked /> Gauge</label>
+        <label><input type="checkbox" id="compact-rows" /> Compact rows</label>
+      </div>
+    
       <section id="results" class="card hidden">
       <div id="summary" class="summary-box"></div>
       <div class="table-head">
@@ -396,6 +406,50 @@
       return out;
     }
     
+
+  function onRefineClick(e){
+    const b = e.target.closest('.refine-btn'); if (!b) return;
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const idx = parseInt(tr.dataset.index,10);
+    const term = tr.querySelector('.term')?.textContent?.trim();
+    const hint = prompt(`Refine web search for ${term} (e.g., "computing", "law", "EU"):`);
+    if (!hint) return;
+    fetch(`/enrich?term=${encodeURIComponent(term)}&keyword=${encodeURIComponent(hint)}`)
+      .then(r=>r.json()).then(js=>{
+        const cands = (js && js.candidates) || [];
+        if (cands.length){
+          const sel = tr.querySelector('.cand-select');
+          const opts = cands.map((c,ci)=>`<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('');
+          if (sel) sel.innerHTML = opts; else tr.querySelector('.picker').innerHTML = `<select class="cand-select">${opts}</select>`;
+          tr.querySelector('.defn').textContent = cands[0].definition || '';
+          tr.querySelector('.conf').textContent = Number(cands[0].confidence||0).toFixed(2);
+          const fill = tr.querySelector('.gauge .fill'); if (fill) fill.style.width = `${Math.round((cands[0].confidence||0)*100)}%`;
+          tr.querySelector('.src').innerHTML = `<span class="pill pill-web">${cands[0].source}</span>`;
+        } else {
+          alert('No candidates found for that hint.');
+        }
+      }).catch(()=>alert('Refine failed.'));
+  }
+  document.addEventListener('click', onRefineClick);
+
+  // Column toggles & compact mode
+  function applyTableToggles(){
+    const t = document.querySelector('#results table'); if (!t) return;
+    const showSrc = document.getElementById('col-toggle-source').checked;
+    const showConf = document.getElementById('col-toggle-confidence').checked;
+    const showGauge = document.getElementById('col-toggle-gauge').checked;
+    t.querySelectorAll('th.src, td.src').forEach(el=>el.style.display = showSrc? 'table-cell':'none');
+    t.querySelectorAll('th.conf, td.conf').forEach(el=>el.style.display = showConf? 'table-cell':'none');
+    t.querySelectorAll('th.gauge, td.gauge').forEach(el=>el.style.display = showGauge? 'table-cell':'none');
+    document.querySelector('#results').classList.toggle('compact', document.getElementById('compact-rows').checked);
+  }
+  ['col-toggle-source','col-toggle-confidence','col-toggle-gauge','compact-rows'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyTableToggles);
+  });
+  // Call after rendering
+  const _oldRenderResults = renderResults;
+  renderResults = function(data){ _oldRenderResults(data); applyTableToggles(); };
 </script>
 </body>
 </html>
