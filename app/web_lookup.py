@@ -1,3 +1,4 @@
+print('[BOOT] web_lookup.py imported – v4.6.4')
 
 from typing import List, Tuple
 import time, math, random, json, sqlite3
@@ -726,3 +727,5 @@ def get_web_candidates(acr: str, domain: str|None=None, *, lang: str='en', limit
         seen.add(key); uniq.append(c)
     log.info("web_candidates(%s): %d", acr, len(uniq))
     return uniq[:limit]
+
+WEB_LOOKUP_VERSION = 'web-lookup 4.6.4'

@@ -15,11 +15,11 @@ from app.extraction import sentence_split, find_acronym_candidates, find_definit
 # --- robust import for web lookups ---
 try:
     # absolute import first (more robust on Render)
-    from app.web_lookup import get_web_candidates
+    from app.web_lookup import get_web_candidates, WEB_LOOKUP_VERSION
 except Exception as _abs_err:
     try:
         # fallback to relative
-        from app.web_lookup import get_web_candidates
+        from app.web_lookup import get_web_candidates, WEB_LOOKUP_VERSION
     except Exception as _rel_err:
         def get_web_candidates(acr: str, context_text: str, limit: int = 5):
             # Last-resort: no web results
@@ -105,12 +105,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.6.2",
+        "version": "v4.6.4",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.6.2"}
+    return {"version": "v4.6.4"}
 
 
 @app.get("/health")
@@ -167,6 +167,9 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
     
     results = []
     for acr in acronyms:
+        # WEB LOOKUP
+        cands_web = get_web_candidates(acr, domain=domain_val, lang='en', limit=8) if USE_WEB else []
+        logging.getLogger('acronym-app').info('acr=%s web_candidates=%d', acr, len(cands_web))
         cands: list[Candidate] = []
         chosen_idx = 0
 
@@ -282,3 +285,9 @@ def detect_language(text: str) -> str:
         return lg if lg in ('en','fr','es','de','it','pt','nl','sv','no','da','fi','pl','cs','ro','hu','ru') else 'en'
     except Exception:
         return 'en'
+
+@app.on_event("startup")
+async def on_start():
+    logging.getLogger('web-lookup').setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
+    print("[BOOT] Acronym Buster starting – v4.6.4, " + WEB_LOOKUP_VERSION)
