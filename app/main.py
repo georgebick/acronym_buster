@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from docx import Document as DocxDoc
 
-from .models import ExtractionResponse, AcronymResult
+from .models import ExtractionResponse, AcronymResult, Candidate
 from .extraction import sentence_split, find_acronym_candidates, find_definition_in_text, scan_tables_for_glossary, collect_global_longforms, INCLUDE_COMMON
 from .web_lookup import web_fallback
 from dotenv import load_dotenv
@@ -32,6 +32,10 @@ logging.basicConfig(level=logging.DEBUG if DBG else logging.INFO)
 logger = logging.getLogger('acronym-extractor')
 
 app = FastAPI(title="Acronym Extractor")
+
+@app.get("/version")
+def version():
+    return {"version": "v3.2-candidate-import-fix"}
 
 
 @app.get("/health")
