@@ -113,12 +113,12 @@ async def learn(payload: LearnPayload):
 def meta():
     from os import getenv
     return {
-        "version": "v4.6.5",
+        "version": "v4.6.6",
         "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
     }
 
 def version():
-    return {"version": "v4.6.5"}
+    return {"version": "v4.6.6"}
 
 
 @app.get("/health")
@@ -298,4 +298,4 @@ def detect_language(text: str) -> str:
 async def on_start():
     logging.getLogger('web-lookup').setLevel(logging.INFO)
     logging.getLogger().setLevel(logging.INFO)
-    print("[BOOT] Acronym Buster starting – v4.6.5, " + WEB_LOOKUP_VERSION)
+    print("[BOOT] Acronym Buster starting – v4.6.6, " + WEB_LOOKUP_VERSION)
