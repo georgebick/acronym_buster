@@ -31,11 +31,40 @@ DBG = (getenv('DEBUG') or 'false').strip().lower() in ('1','true','yes','y','on'
 logging.basicConfig(level=logging.DEBUG if DBG else logging.INFO)
 logger = logging.getLogger('acronym-extractor')
 
+
+# --- Canonical map (always defined to avoid NameError) ---
+CANONICAL_MAP = {
+    'USA': 'United States of America',
+    'UK': 'United Kingdom',
+    'EU': 'European Union',
+    'UN': 'United Nations',
+    'NATO': 'North Atlantic Treaty Organization',
+    'CPU': 'Central Processing Unit',
+    'GPU': 'Graphics Processing Unit',
+    'RAM': 'Random Access Memory',
+    'ROM': 'Read-Only Memory',
+    'URL': 'Uniform Resource Locator',
+    'URI': 'Uniform Resource Identifier',
+    'HTTP': 'Hypertext Transfer Protocol',
+    'HTTPS': 'Hypertext Transfer Protocol Secure',
+    'HTML': 'HyperText Markup Language',
+    'XML': 'Extensible Markup Language',
+    'JSON': 'JavaScript Object Notation',
+    'PDF': 'Portable Document Format',
+    'API': 'Application Programming Interface',
+    'SEO': 'Search Engine Optimization',
+    'CIA': 'Central Intelligence Agency',
+    'FBI': 'Federal Bureau of Investigation',
+    'NASA': 'National Aeronautics and Space Administration',
+    'GDPR': 'General Data Protection Regulation',
+    'AI': 'Artificial intelligence',
+}
+
 app = FastAPI(title="Acronym Extractor")
 
 @app.get("/version")
 def version():
-    return {"version": "v3.2-candidate-import-fix"}
+    return {"version": "v3.3-canonical-defined"}
 
 
 @app.get("/health")
