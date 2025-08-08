@@ -58,3 +58,14 @@ code { background: #111827; padding: 2px 6px; border-radius: 4px; }
 .footer { padding: 30px 0 60px; color: var(--muted); text-align: center; }
 
 tr.saved { outline: 2px solid #6be675; outline-offset: -2px; transition: outline 0.8s ease; }
+
+
+/* v3.8 UI polish */
+.hero.gradient { background: linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%); color: #fff; }
+.summary-box { margin-bottom: 12px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 8px; }
+.summary-grid div { background: #f6f7fb; border: 1px solid #e6e8f0; border-radius: 12px; padding: 10px; text-align:center; }
+.summary-grid div strong { display:block; font-size: 1.25rem; }
+.bar { width: 120px; height: 8px; background:#eee; border-radius: 999px; overflow:hidden; }
+.bar .fill { height: 100%; background: linear-gradient(90deg,#34d399,#10b981); }
+#footer-ver { display:flex; justify-content:center; margin: 24px 0; }

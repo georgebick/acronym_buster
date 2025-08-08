@@ -100,8 +100,17 @@ async def learn(payload: LearnPayload):
     return {"ok": ok}
 
 @app.get("/version")
+
+@app.get("/meta")
+def meta():
+    from os import getenv
+    return {
+        "version": "v3.8-wikidata-clientfetch-ui",
+        "debug": (getenv("DEBUG") or "false").lower() in ("1","true","yes","y","on")
+    }
+
 def version():
-    return {"version": "v3.6-web-hooked"}
+    return {"version": "v3.8-wikidata-clientfetch-ui"}
 
 
 @app.get("/health")
@@ -179,11 +188,12 @@ async def extract(file: UploadFile = File(...)) -> ExtractionResponse:
         if learned:
             cands.append(Candidate(definition=learned['definition'], confidence=float(learned.get('confidence',0.9)), source=learned.get('source','learned')))
 
-        # 4) Web candidates (free)
+        # 4) Web candidates (free) — only if we still have nothing (to avoid 429s)
         try:
-            wc = web_candidates(acr, full_text[:4000], limit=5)
-            for defn, dom, sc in (wc or []):
-                cands.append(Candidate(definition=defn, confidence=round(sc, 3), source=f'web:{dom}'))
+            if not cands:
+                wc = web_candidates(acr, full_text[:4000], limit=5)
+                for defn, dom, sc in (wc or []):
+                    cands.append(Candidate(definition=defn, confidence=round(sc, 3), source=f'web:{dom}'))
         except Exception as e:
             logger.warning(f'web_candidates error for {acr}: {e}')
 
@@ -242,3 +252,25 @@ async def extract_csv(file: UploadFile = File(...)):
 
     headers = {"Content-Disposition": "attachment; filename=acronyms.csv"}
     return StreamingResponse(io.BytesIO(output.getvalue().encode("utf-8")), media_type="text/csv", headers=headers)
+
+from pydantic import BaseModel
+
+class EnrichPayload(BaseModel):
+    term: str
+    keyword: str | None = None
+    context: str | None = None
+
+@app.post("/enrich")
+async def enrich(payload: EnrichPayload):
+    term = payload.term.upper()
+    ctx = payload.context or ""
+    kw = payload.keyword or None
+    try:
+        cands = web_candidates(term, ctx[:4000], limit=6, keyword=kw)
+        # return Candidate-like dicts
+        out = [{"definition": d, "source": f"web:{dom}", "confidence": float(sc)} for (d, dom, sc) in cands]
+        return {"term": term, "candidates": out}
+    except Exception as e:
+        logger.warning(f"/enrich error for {term}: {e}")
+        return {"term": term, "candidates": []}
+

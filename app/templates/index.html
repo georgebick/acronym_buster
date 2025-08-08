@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <header class="hero">
+  <header class="hero gradient">
     <div class="wrap">
       <h1>📄 Acronym & Definition Extractor</h1>
       <p>Upload a Word <strong>.docx</strong>. We prefer in-document definitions; if missing, we gather <em>free</em> web candidates (Wikipedia/DDG) and let you pick.</p>
@@ -27,9 +27,11 @@
         </div>
       </div>
       <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
         <label class="switch"><input type="checkbox" id="include-common" checked /><span>Include common acronyms (URL, HTML, PDF, USA…)</span></label>
       </div>
       <div class="actions">
+        <label class="switch"><input type="checkbox" id="use-client-web" /> <span>Fetch web candidates in browser (Wikipedia/Wikidata)</span></label>
         <button id="extract-btn" disabled>Extract Acronyms</button>
         <button id="download-csv" disabled class="secondary">Download CSV</button>
       </div>
@@ -38,6 +40,7 @@
     </section>
 
     <section id="results" class="card hidden">
+      <div id="summary" class="summary-box"></div>
       <div class="table-head">
         <h2>Results (click dropdowns to pick the right definition)</h2>
         <input type="search" id="filter" placeholder="Filter acronyms or definitions…" />
@@ -48,11 +51,11 @@
             <tr>
               <th style="min-width:120px">Acronym</th>
               <th style="min-width:260px">Definition</th>
-              <th>Confidence</th>
+              <th>Confidence</th><th>Gauge</th>
               <th>Source</th>
               <th>Note</th>
               <th>First seen</th>
-              <th>Pick</th>
+              <th>Pick</th><th>Refine</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -61,7 +64,7 @@
     </section>
   </main>
 
-  <footer class="footer wrap">
+  <footer class="footer wrap" id="footer-ver">
     <small>© Acronym Extractor • Document-first definitions, web as fallback (free sources).</small>
   </footer>
 
@@ -130,6 +133,7 @@
             <td><code>${a.term}</code></td>
             <td class="defn">${defn ? defn : '<em>—</em>'}</td>
             <td class="conf">${Number(conf||0).toFixed(2)}</td>
+            <td class="gauge"><div class="bar"><div class="fill" style="width:${Math.max(0,Math.min(1,conf||0))*100}%"></div></div></td>
             <td class="src"><span class="pill ${src.startsWith('web:') ? 'pill-web' : (src==='document' ? 'pill-doc' : (src==='canonical' ? 'pill-doc' : 'pill-none'))}">${src}</span></td>
             <td class="note">${note || ''}</td>
             <td class="excerpt">${a.first_seen_excerpt ? a.first_seen_excerpt : ''}</td>
@@ -137,6 +141,9 @@
               ${(a.candidates && a.candidates.length > 0)
                 ? `<select class="cand-select">${candOpts}</select>`
                 : '<em>no candidates</em>'}
+            </td>
+            <td>
+              <button class="refine-btn">Refine</button>
             </td>
           </tr>
         `;
@@ -232,6 +239,137 @@
 
     extractBtn.addEventListener('click', extract);
     downloadBtn.addEventListener('click', downloadClientCSV);
-  </script>
+  
+      // refine: ask for a keyword and hit /enrich to add better candidates
+      tableBody.addEventListener('click', async (e) => {
+        if (!e.target.classList.contains('refine-btn')) return;
+        const tr = e.target.closest('tr');
+        const idx = Number(tr.getAttribute('data-index'));
+        const a = __acronymData.acronyms[idx];
+        const kw = prompt(`Add a keyword to refine '${a.term}' (e.g., 'computing', 'law', 'web'):`);
+        if (kw === null) return;
+        try {
+          const res = await fetch('/enrich', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ term: a.term, keyword: kw, context: (a.first_seen_excerpt || '') })});
+          const data = await res.json();
+          if (data && Array.isArray(data.candidates)) {
+            const newCands = data.candidates.map(c => ({definition:c.definition, confidence:c.confidence, source:c.source}));
+            // Merge without dupes
+            const existing = a.candidates || [];
+            const seen = new Set(existing.map(c => (c.definition||'').toLowerCase().trim()+ '|' + (c.source||'')));
+            for (const c of newCands) {
+              const key = (c.definition||'').toLowerCase().trim()+ '|' + (c.source||'');
+              if (!seen.has(key)) existing.push(c);
+            }
+            a.candidates = existing;
+            // Rebuild select
+            const sel = tr.querySelector('.cand-select');
+            if (sel) {
+              sel.innerHTML = existing.map((c,ci) => `<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('');
+            } else {
+              tr.querySelector('.picker').innerHTML = `<select class="cand-select">${existing.map((c,ci)=>`<option value="${ci}">${(c.definition||'').replace(/</g,'&lt;')} — [${c.source}] ${(c.confidence||0).toFixed(2)}</option>`).join('')}</select>`;
+            }
+          }
+        } catch (err) {
+          console.log('enrich error', err);
+        }
+      });
+    
+  
+    // Fetch version/meta and show in footer
+    fetch('/meta').then(r=>r.json()).then(m=>{
+      const f = document.getElementById('footer-ver');
+      if (f && m && m.version) {
+        f.innerHTML = `<small>© Acronym Extractor • ${m.version}</small>`;
+      }
+    }).catch(()=>{});
+
+    function computeSummary(data) {
+      const total = data.acronyms.length;
+      let doc=0, learned=0, web=0, none=0, multi=0;
+      for (const a of data.acronyms) {
+        const hasMulti = (a.candidates && a.candidates.length>1);
+        if (hasMulti) multi++;
+        let src = a.source;
+        if (a.candidates && a.candidates[a.chosen_index]) src = a.candidates[a.chosen_index].source;
+        if (!src) { none++; continue; }
+        if (src === 'document') doc++;
+        else if (src === 'learned' || src === 'user') learned++;
+        else if (src.startsWith('web:')) web++;
+        else none++;
+      }
+      const el = document.getElementById('summary');
+      el.innerHTML = `
+        <div class="summary-grid">
+          <div><strong>${total}</strong><span>Total acronyms</span></div>
+          <div><strong>${doc}</strong><span>From document</span></div>
+          <div><strong>${learned}</strong><span>From learned memory</span></div>
+          <div><strong>${web}</strong><span>From web</span></div>
+          <div><strong>${multi}</strong><span>With multiple choices</span></div>
+        </div>
+      `;
+    }
+
+    // Optional client-side web fetch (Wikipedia + Wikidata), merges into candidates
+    async function clientFetchWeb(term, ctx, keyword) {
+      const out = [];
+      try {
+        // Wikipedia REST summary
+        const wp1 = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(keyword? term+ ' ('+keyword+')' : term)}`);
+        if (wp1.ok) {
+          const j = await wp1.json();
+          const txt = (j.extract || j.description || '').split('.')[0];
+          if (txt) out.push({definition: txt, source: 'web:en.wikipedia.org', confidence: 0.58});
+        }
+      } catch {}
+      try {
+        // Wikipedia open search
+        const os = new URL('https://en.wikipedia.org/w/api.php');
+        os.search = new URLSearchParams({action:'opensearch',limit:'6',namespace:'0',format:'json',search: keyword? term+' '+keyword : term}).toString();
+        const wp2 = await fetch(os, {headers:{'Accept':'application/json'}});
+        if (wp2.ok) {
+          const arr = await wp2.json();
+          if (Array.isArray(arr) && arr.length>=3) {
+            const titles = arr[1], descs = arr[2];
+            for (let i=0;i<Math.min(titles.length, descs.length);i++) {
+              const txt = (descs[i] || titles[i] || '').trim();
+              if (txt) out.push({definition: txt, source: 'web:en.wikipedia.org', confidence: 0.55});
+            }
+          }
+        }
+      } catch {}
+      try {
+        // Wikidata search
+        const wd = new URL('https://www.wikidata.org/w/api.php');
+        wd.search = new URLSearchParams({action:'wbsearchentities',format:'json',language:'en',limit:'6',search: keyword? term+' '+keyword: term}).toString();
+        const wdres = await fetch(wd, {headers:{'Accept':'application/json'}});
+        if (wdres.ok) {
+          const j = await wdres.json();
+          if (j && Array.isArray(j.search)) {
+            for (const it of j.search) {
+              const desc = (it.description || it.label || '').trim();
+              if (desc) out.push({definition: desc, source: 'web:www.wikidata.org', confidence: 0.5});
+            }
+          }
+        }
+      } catch {}
+      // Simple re-scoring with initials & context keywords
+      function score(defn) {
+        const a = term.toUpperCase();
+        const words = (defn.definition||'').split(/[^A-Za-z0-9]+/).filter(Boolean);
+        const initials = words.map(w=>w[0].toUpperCase()).join('');
+        let s = 0.5;
+        if (initials === a) s += 0.3;
+        else if (initials.includes(a) || a.includes(initials)) s += 0.15;
+        const ctx = (ctx||'').toLowerCase();
+        for (const k of ['computer','data','network','law','regulation','europe','united','states','protocol','web','processor','graphics','artificial','intelligence']) {
+          if (ctx.includes(k) && (defn.definition||'').toLowerCase().includes(k)) s += 0.03;
+        }
+        return Math.max(0.1, Math.min(0.9, s));
+      }
+      out.forEach(o => o.confidence = score(o));
+      return out;
+    }
+    
+</script>
 </body>
 </html>

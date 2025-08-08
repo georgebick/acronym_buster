@@ -1,152 +1,164 @@
-import os
-import re
-import requests
-from typing import Optional, Dict, Any, List, Tuple
-from urllib.parse import urlencode
 
-BING_KEY = os.getenv("BING_SUBSCRIPTION_KEY")
-BING_ENDPOINT = os.getenv("BING_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search")
-WEB_MAX_CANDIDATES = int(os.getenv("WEB_MAX_CANDIDATES", "5"))
+from typing import List, Tuple
+import time, math, random, json, sqlite3
+from pathlib import Path
 
-def keywords_from_text(text: str, k: int = 8) -> List[str]:
-    # naive keyword extraction: take distinct capitalized words & frequent nouns-ish tokens
-    words = re.findall(r"[A-Za-z]{3,}", text)
-    caps = [w for w in words if w[0].isupper()]
-    freq = {}
-    for w in words:
-        wl = w.lower()
-        freq[wl] = freq.get(wl, 0) + 1
-    ranked = sorted(freq.items(), key=lambda x: x[1], reverse=True)
-    return list(dict.fromkeys([*caps[:k//2], *[w for w,_ in ranked[:k]]]))[:k]
+import httpx
 
-def wikipedia_search(acr: str) -> Optional[Tuple[str, str, float]]:
-    # Use opensearch API
-    q = f"{acr} acronym"
-    url = f"https://en.wikipedia.org/w/api.php?action=opensearch&limit=5&namespace=0&format=json&search={requests.utils.quote(q)}"
+BASE_DIR = Path(__file__).resolve().parent
+CACHE_DB = BASE_DIR / "webcache.sqlite3"
+
+def _db():
+    conn = sqlite3.connect(CACHE_DB)
+    conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT, ts REAL)")
+    return conn
+
+def _cache_get(key: str):
     try:
-        r = requests.get(url, timeout=6)
-        if r.ok:
-            data = r.json()
-            titles, descs, links = data[1], data[2], data[3]
-            for t, d, l in zip(titles, descs, links):
-                if len(t) <= 80 and acr.upper() in t.upper():
-                    # Description often contains "X is ... stands for ..." etc.
-                    if d:
-                        return (t, "en.wikipedia.org", 0.55)
-            # fallback first result
-            if titles:
-                return (titles[0], "en.wikipedia.org", 0.5)
+        conn = _db()
+        cur = conn.execute("SELECT value, ts FROM cache WHERE key=?", (key,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return json.loads(row[0])
     except Exception:
         pass
     return None
 
-def duckduckgo_instant(acr: str) -> Optional[Tuple[str, str, float]]:
-    url = "https://api.duckduckgo.com/"
-    params = {"q": f"{acr} stands for", "format": "json", "no_html": 1, "skip_disambig": 1}
+def _cache_set(key: str, value):
     try:
-        r = requests.get(url, params=params, timeout=6)
-        if r.ok:
-            data = r.json()
-            abstract = data.get("AbstractText") or ""
-            if abstract:
-                # crude: take the first clause
-                snippet = abstract.split(".")[0].strip()
-                if snippet and len(snippet) > 3:
-                    return (snippet, "duckduckgo.com", 0.5)
-            # try related topics
-            topics = data.get("RelatedTopics") or []
-            for t in topics:
-                if isinstance(t, dict) and t.get("Text"):
-                    txt = t["Text"].split(".")[0].strip()
-                    if acr.upper() in txt.upper():
-                        return (txt, "duckduckgo.com", 0.48)
+        conn = _db()
+        conn.execute("INSERT OR REPLACE INTO cache(key,value,ts) VALUES(?,?,?)", (key, json.dumps(value), time.time()))
+        conn.commit()
+        conn.close()
     except Exception:
         pass
-    return None
 
-def bing_search(acr: str, keywords: List[str]) -> Optional[Tuple[str, str, float]]:
-    if not BING_KEY:
-        return None
-    headers = {"Ocp-Apim-Subscription-Key": BING_KEY}
-    params = {"q": f"{acr} acronym meaning {' '.join(keywords)}", "mkt": "en-GB", "count": WEB_MAX_CANDIDATES}
-    try:
-        r = requests.get(BING_ENDPOINT, headers=headers, params=params, timeout=6)
-        if r.ok:
-            data = r.json()
-            web_pages = (data.get("webPages") or {}).get("value", [])
-            for item in web_pages:
-                name = item.get("name", "")
-                snippet = item.get("snippet", "")
-                url = item.get("url", "")
-                domain = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
-                text = snippet or name
-                if len(text) > 3:
-                    return (text[:180], domain, 0.58)
-    except Exception:
-        pass
-    return None
+UA = "AcronymExtractor/1.0 (+https://example.invalid)"
+TIMEOUT = 5.0
 
-def web_fallback(acr: str, context_text: str) -> Optional[Tuple[str, str, float]]:
-    kws = keywords_from_text(context_text, k=8)
-    # Prefer Bing if key, else Wikipedia, then DDG
-    for fn in (lambda: bing_search(acr, kws), lambda: wikipedia_search(acr), lambda: duckduckgo_instant(acr)):
-        res = fn()
-        if res:
-            return res
-    return None
+def _backoff_sleep(attempt: int):
+    time.sleep(min(1.5, 0.15 * (2 ** attempt) + random.random() * 0.1))
 
-
-def wikipedia_candidates_loose(acr: str) -> List[Tuple[str,str,float]]:
-    # Try without 'acronym' to pull common expansions by page title
-    q = acr
-    url = f"https://en.wikipedia.org/w/api.php?action=opensearch&limit=8&namespace=0&format=json&search={requests.utils.quote(q)}"
-    out = []
-    try:
-        r = requests.get(url, timeout=6)
-        if r.ok:
-            data = r.json()
-            titles, descs, links = data[1], data[2], data[3]
-            for t, d, l in zip(titles, descs, links):
-                if t and len(t) <= 120:
-                    out.append((t, "en.wikipedia.org", 0.5))
-    except Exception:
-        pass
-    return out
-
-def wiktionary_candidates(acr: str) -> List[Tuple[str,str,float]]:
-    # Very simple: search page titles; Wiktionary often lists expansions in summaries
-    api = "https://en.wiktionary.org/w/api.php"
-    params = {"action":"opensearch", "format":"json", "limit":"5", "search":acr}
-    out = []
-    try:
-        r = requests.get(api, params=params, timeout=6)
-        if r.ok:
-            data = r.json()
-            titles = data[1]
-            for t in titles:
-                if t and len(t) <= 120:
-                    out.append((t, "en.wiktionary.org", 0.45))
-    except Exception:
-        pass
-    return out
-
-def web_candidates(acr: str, context_text: str, limit: int = 5) -> List[Tuple[str,str,float]]:
-    seen = set()
-    out = []
-    # Try multiple free sources; keep first 'limit' unique strings
-    sources = [lambda: wikipedia_candidates(acr),
-               lambda: wikipedia_candidates_loose(acr),
-               lambda: duckduckgo_candidates(acr),
-               lambda: wiktionary_candidates(acr)]
-    for fn in sources:
+def _http_get_json(url: str, params: dict) -> dict | list | None:
+    headers = {"User-Agent": UA}
+    for attempt in range(3):
         try:
-            for defn, dom, sc in (fn() or []):
-                key = (defn, dom)
-                if key in seen: continue
-                seen.add(key)
-                out.append((defn, dom, min(0.6, sc)))
-                if len(out) >= limit:
-                    return out
+            with httpx.Client(timeout=TIMEOUT, headers=headers) as client:
+                r = client.get(url, params=params)
+                if r.status_code == 429:
+                    _backoff_sleep(attempt)
+                    continue
+                if r.status_code >= 500:
+                    _backoff_sleep(attempt)
+                    continue
+                if r.status_code != 200:
+                    return None
+                ct = r.headers.get("content-type","")
+                if "json" in ct or r.text.strip().startswith("{") or r.text.strip().startswith("["):
+                    return r.json()
+                return None
         except Exception:
-            continue
+            _backoff_sleep(attempt)
+    return None
+
+def _score_candidate(acr: str, text: str, context: str) -> float:
+    # Heuristic: initials alignment + context overlap
+    a = acr.upper()
+    t = (text or "").strip()
+    if not t: return 0.0
+    # initials
+    words = [w for w in re_split_nonword(t) if w]
+    initials = "".join(w[0].upper() for w in words if w[0].isalnum())
+    align = 1.0 if initials == a else (0.7 if a in initials or initials in a else 0.0)
+    # context overlap (bag of lowercase nouns-ish)
+    ctx = " ".join(re_split_nonword(context.lower()))[:500]
+    bonus = 0.0
+    for key in ("computer","data","network","law","regulation","europe","united","states","protocol","web","page","pdf","memory","processor","graphics","artificial","intelligence","health","organization","university","union","nation"):
+        if key in ctx and key in t.lower():
+            bonus += 0.04
+    return max(0.1, min(0.9, 0.5 + 0.3*align + bonus))
+
+def re_split_nonword(s: str):
+    import re
+    return re.split(r"[^A-Za-z0-9]+", s)
+
+def wikipedia_opensearch(acr: str, keyword: str | None = None):
+    q = acr if not keyword else f"{acr} {keyword}"
+    url = "https://en.wikipedia.org/w/api.php"
+    params = {"action":"opensearch","limit":"6","namespace":"0","format":"json","search":q}
+    data = _http_get_json(url, params)
+    out = []
+    if isinstance(data, list) and len(data) >= 4:
+        titles, descs, links = data[1], data[2], data[3]
+        for t, d, l in zip(titles, descs, links):
+            txt = (d or t or "").strip()
+            if txt:
+                out.append((txt, "en.wikipedia.org", 0.55))
+    return out
+
+def wikipedia_rest_summary(acr: str, keyword: str | None = None):
+    # Try reading page summary for exact acronym
+    page = acr if not keyword else f"{acr} ({keyword})"
+    url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page}"
+    data = _http_get_json(url, {})
+    out = []
+    if isinstance(data, dict):
+        txt = (data.get("extract") or data.get("description") or "").strip()
+        if txt:
+            out.append((txt.split(".")[0], "en.wikipedia.org", 0.58))
+    return out
+
+def wiktionary_search(acr: str, keyword: str | None = None):
+    q = acr if not keyword else f"{acr} {keyword}"
+    url = "https://en.wiktionary.org/w/api.php"
+    params = {"action":"opensearch","format":"json","limit":"5","search":q}
+    data = _http_get_json(url, params)
+    out = []
+    if isinstance(data, list) and len(data) >= 2:
+        titles = data[1]
+        for t in titles:
+            if t:
+                out.append((t, "en.wiktionary.org", 0.45))
+    return out
+
+def wikidata_search(acr: str, keyword: str | None = None):
+    q = acr if not keyword else f"{acr} {keyword}"
+    url = "https://www.wikidata.org/w/api.php"
+    params = {"action":"wbsearchentities","format":"json","language":"en","limit":"6","search":q}
+    data = _http_get_json(url, params)
+    out = []
+    if isinstance(data, dict) and isinstance(data.get('search'), list):
+        for item in data['search']:
+            desc = (item.get('description') or item.get('label') or '').strip()
+            if desc:
+                out.append((desc, "www.wikidata.org", 0.5))
+    return out
+
+
+def web_candidates(acr: str, context_text: str, limit: int = 5, keyword: str | None = None) -> List[Tuple[str,str,float]]:
+    # caching
+    key = f"{acr}|{(keyword or '').strip().lower()}"
+    cached = _cache_get(key)
+    if cached:
+        return cached[:limit]
+
+    out = []
+    seen = set()
+    def add(items):
+        for defn, dom, sc in (items or []):
+            k = (defn.strip().lower(), dom)
+            if k in seen: continue
+            seen.add(k)
+            score = sc
+            score = max(score, _score_candidate(acr, defn, context_text))
+            out.append((defn, dom, score))
+
+    add(wikipedia_rest_summary(acr, keyword))
+    if len(out) < limit: add(wikipedia_opensearch(acr, keyword))
+    if len(out) < limit: add(wiktionary_search(acr, keyword))
+    if len(out) < limit: add(wikidata_search(acr, keyword))
+
+    out = sorted(out, key=lambda x: x[2], reverse=True)[:limit]
+    _cache_set(key, out)
     return out
